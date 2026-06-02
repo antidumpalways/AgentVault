@@ -15,8 +15,8 @@ interface CreatedAgent {
 
 const steps = [
   { id: 0, label: "WALLET" },
-  { id: 1, label: "ENCRYPT" },
-  { id: 2, label: "STORE" },
+  { id: 1, label: "STORY PROTOCOL" },
+  { id: 2, label: "CDR ENCRYPT" },
 ];
 
 export default function SpawnContent() {
@@ -41,7 +41,7 @@ export default function SpawnContent() {
     setLogs([]);
     try {
       setStep(1);
-      setLogs(["[STORY] Registering IP Asset..."]);
+      setLogs(["[STORY] Registering IP Asset on Story Protocol..."]);
       const storyRes = await fetch("/api/story/setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -53,7 +53,7 @@ export default function SpawnContent() {
 
       setLogs((p) => [...p, "[CDR] Initializing threshold encryption..."]);
       const initialMemory = `I am ${agentName}, created on ${new Date().toISOString()}.`;
-      const { uuid, txHash } = await storeEncryptedMemory(initialMemory, address, storyData.readConditionData);
+      const { uuid, txHash } = await storeEncryptedMemory(initialMemory, address);
       setStep(2);
       setLogs((p) => [...p, `[CDR] Vault UUID: ${uuid}`, `[CDR] File: agent-${uuid}.md`, `[CDR] Tx: ${txHash.slice(0, 14)}...`]);
       const agentData = {
