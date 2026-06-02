@@ -5,8 +5,10 @@ import { rateLimit, getClientIp } from "@/lib/rateLimit";
 
 const RPC_URL = process.env.RPC_URL || "https://aeneid.storyrpc.io";
 
-// Drip 0.5 IP per request — covers ~500x spawns (each spawn is ~0.001 IP gas)
-const DRIP_AMOUNT_WEI = BigInt("500000000000000000"); // 0.5 IP
+// Drip 0.1 IP per request — covers ~100x spawns (each spawn is ~0.001 IP gas).
+// Small enough that the deployer wallet can serve many testers; large enough
+// to be immediately useful (well above the 0.05 IP minimum for setup).
+const DRIP_AMOUNT_WEI = BigInt("100000000000000000"); // 0.1 IP
 
 // Track which wallets have been dripped to (in-memory, resets on deploy).
 // Combined with rateLimit() this gives us "1 drip per wallet per hour" semantics.
