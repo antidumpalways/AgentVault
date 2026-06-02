@@ -41,6 +41,7 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
   return (
     <WalletProvider>
       <StoreProvider>
+        {isLanding && children}
         {!isLanding && !isDashboard && (
           <main className="min-h-screen">{children}</main>
         )}
