@@ -1,14 +1,17 @@
 "use client";
 
 import { createContext, useContext, ReactNode } from "react";
-import { useStore, Agent, Memory } from "@/hooks/useStore";
+import { useStore, Agent, Memory, GrantedLicense } from "@/hooks/useStore";
 
 interface StoreContextType {
   agents: Agent[];
   memories: Memory[];
+  grantedLicenses: GrantedLicense[];
   loaded: boolean;
   addAgent: (agent: Agent) => void;
   addMemory: (memory: Memory) => void;
+  addGrantedLicense: (license: GrantedLicense) => void;
+  removeGrantedLicense: (id: string) => void;
   getAgentMemories: (agentId: string) => Memory[];
   totalMemories: number;
   totalAgents: number;
