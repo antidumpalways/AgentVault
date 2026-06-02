@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
 import { isValidAddress } from "@/lib/validate";
+import { safeError } from "@/lib/apiError";
+import { csrfCheck } from "@/lib/csrf";
 
 let wasmInit: Promise<void> | null = null;
 
@@ -8,6 +10,8 @@ const RPC_URL = process.env.RPC_URL || "https://aeneid.storyrpc.io";
 const STORY_API_URL = process.env.STORY_API_URL || "https://aeneid.storyapi.dev";
 
 export async function POST(request: NextRequest) {
+  const csrf = csrfCheck(request);
+  if (csrf) return csrf;
   try {
     const { uuid, walletAddress, licenseTokenIds } = await request.json();
     if (!uuid || !walletAddress) {
@@ -59,10 +63,11 @@ export async function POST(request: NextRequest) {
       txHash,
       message: "Memory decrypted successfully",
     });
-  } catch (error: any) {
-    console.error("CDR Recall error:", error?.message, error?.cause?.message || "");
+  } catch (error) {
+    console.error("CDR Recall error:", error);
+    // For recall, return a generic "recall failed" — the details are not actionable for the client
     return NextResponse.json(
-      { error: (error as Error)?.message || "Failed to recall memory", details: error?.cause?.message || "" },
+      { error: "Failed to recall memory" },
       { status: 500 }
     );
   }

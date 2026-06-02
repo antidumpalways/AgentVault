@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
 import { isValidAddress } from "@/lib/validate";
+import { safeError } from "@/lib/apiError";
+import { csrfCheck } from "@/lib/csrf";
 
 let wasmInit: Promise<void> | null = null;
+
+// Cache the global DKG public key — it's a slow RPC call that returns
+// the same value for all users. Refresh every 5 minutes.
+let cachedPubKey: { key: Uint8Array; expiresAt: number } | null = null;
+const PUB_KEY_TTL = 5 * 60 * 1000;
 
 const RPC_URL = process.env.RPC_URL || "https://aeneid.storyrpc.io";
 const STORY_API_URL = process.env.STORY_API_URL || "https://aeneid.storyapi.dev";
@@ -10,6 +17,8 @@ const OWNER_WRITE = "0x4C9bFC96d7092b590D497A191826C3dA2277c34B";
 const LICENSE_READ = "0xC0640AD4CF2CaA9914C8e5C44234359a9102f7a3";
 
 export async function POST(request: NextRequest) {
+  const csrf = csrfCheck(request);
+  if (csrf) return csrf;
   try {
     const { content, walletAddress, readConditionData } = await request.json();
     if (!content || !walletAddress) {
@@ -45,7 +54,14 @@ export async function POST(request: NextRequest) {
 
     const client = new CDRClient({ network: "testnet", publicClient, walletClient, apiUrl: STORY_API_URL });
 
-    const globalPubKey = await client.observer.getGlobalPubKey();
+    const globalPubKey: Uint8Array =
+      cachedPubKey && cachedPubKey.expiresAt > Date.now()
+        ? cachedPubKey.key
+        : await (async () => {
+            const k = await client.observer.getGlobalPubKey();
+            cachedPubKey = { key: k, expiresAt: Date.now() + PUB_KEY_TTL };
+            return k;
+          })();
 
     const allocateParams = readConditionData
       ? {
@@ -88,11 +104,7 @@ export async function POST(request: NextRequest) {
       memoryFile,
       message: "Memory encrypted and stored on-chain",
     });
-  } catch (error: any) {
-    console.error("CDR Store error:", error);
-    return NextResponse.json(
-      { error: (error as Error)?.message || "Failed to store memory" },
-      { status: 500 }
-    );
+  } catch (error) {
+    return safeError("CDR Store", error);
   }
 }

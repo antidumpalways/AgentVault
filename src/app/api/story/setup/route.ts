@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
 import { isValidAddress } from "@/lib/validate";
+import { csrfCheck } from "@/lib/csrf";
 
 const RPC_URL = process.env.RPC_URL || "https://aeneid.storyrpc.io";
 
@@ -28,6 +29,9 @@ export async function POST(request: NextRequest) {
   });
 
   try {
+    const csrf = csrfCheck(request);
+    if (csrf) return csrf;
+
     const { walletAddress } = await request.json();
     if (!walletAddress) {
       return NextResponse.json({ error: "Missing walletAddress" }, { status: 400 });
@@ -206,10 +210,10 @@ export async function POST(request: NextRequest) {
       attachTx: attachStep.txHash,
       mintLicenseTx: mintLicenseStep.txHash,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Story setup error:", error);
     return NextResponse.json(
-      { error: error?.message || "Story setup failed" },
+      { error: "Story setup failed" },
       { status: 500 }
     );
   } finally {

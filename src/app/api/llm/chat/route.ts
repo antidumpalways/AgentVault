@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
+import { csrfCheck } from "@/lib/csrf";
 
 const LLM_API_KEY = process.env.LLM_API_KEY;
 const LLM_API_URL = process.env.LLM_API_URL || "https://api.anthropic.com/v1/messages";
 const LLM_MODEL = process.env.LLM_MODEL || "claude-sonnet-4-20250514";
 
 export async function POST(request: NextRequest) {
+  const csrf = csrfCheck(request);
+  if (csrf) return csrf;
   const rl = rateLimit(`llm:${getClientIp(request)}`, 30, 60 * 1000);
   if (!rl.ok) {
     return NextResponse.json(
@@ -52,12 +55,11 @@ export async function POST(request: NextRequest) {
       if (!response.ok) {
         const err = await response.text();
         console.error("LLM API error:", err);
-        return NextResponse.json(
-          { error: "LLM request failed" },
-          { status: 502 }
-        );
+          return NextResponse.json(
+            { error: "LLM request failed" },
+            { status: 502 }
+          );
       }
-
       const data = await response.json();
       const content = data.content?.[0]?.text || fallbackReply(message);
       return NextResponse.json({ success: true, content });

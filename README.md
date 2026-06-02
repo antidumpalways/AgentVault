@@ -308,21 +308,23 @@ npm install --legacy-peer-deps
 
 ### Environment Variables
 
-Create `.env.local`:
+Copy `.env.local.example` to `.env.local` and fill in:
 
 ```bash
-# RPC
-RPC_URL=https://aeneid.storyrpc.io
-STORY_API_URL=http://172.192.41.96:1317
-
-# Server signer (for CDR + Story transactions)
-WALLET_PRIVATE_KEY=0x...
-
-# LLM
-LLM_API_KEY=sk-ant-...
-LLM_API_URL=https://api.anthropic.com/v1
-LLM_MODEL=claude-sonnet-4-20250514
+cp .env.local.example .env.local
 ```
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `RPC_URL` | yes | Story Aeneid RPC endpoint |
+| `STORY_API_URL` | yes | Story API/indexer endpoint |
+| `WALLET_PRIVATE_KEY` | yes | Server signer for CDR + Story txs (must hold IP on Aeneid) |
+| `LLM_API_KEY` | no | Anthropic key; without it, chat falls back to a demo reply |
+| `LLM_API_URL` | no | Defaults to Anthropic Messages |
+| `LLM_MODEL` | no | Defaults to `claude-sonnet-4-20250514` |
+| `NEXT_PUBLIC_SITE_URL` | prod | Used by CSRF allow-list for deployed origin |
+
+For Vercel, set the same variables in the project's Environment Variables tab. `VERCEL_URL` is auto-populated and also accepted by the CSRF allow-list.
 
 ### Run
 

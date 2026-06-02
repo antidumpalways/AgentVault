@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isValidAddress } from "@/lib/validate";
+import { csrfCheck } from "@/lib/csrf";
 
 const RPC_URL = process.env.RPC_URL || "https://aeneid.storyrpc.io";
 const AGENT_VAULT_ADDRESS = "0x7e0f1182c444ba420a1d98c81c2da05bc4d1b0a8";
@@ -32,6 +33,8 @@ const AGENT_VAULT_ABI = [
 ];
 
 export async function POST(request: NextRequest) {
+  const csrf = csrfCheck(request);
+  if (csrf) return csrf;
   try {
     const { action, ...params } = await request.json();
 
@@ -83,10 +86,10 @@ export async function POST(request: NextRequest) {
       default:
         return NextResponse.json({ error: "Unknown action" }, { status: 400 });
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error("Contract error:", error);
     return NextResponse.json(
-      { error: (error as Error)?.message || "Contract interaction failed" },
+      { error: "Contract interaction failed" },
       { status: 500 }
     );
   }

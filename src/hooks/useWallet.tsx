@@ -53,8 +53,22 @@ export function WalletProvider({ children }: { children: ReactNode }) {
               method: "wallet_switchEthereumChain",
               params: [{ chainId: "0x523" }],
             });
-          } catch {
-            console.warn("Could not switch to Aeneid testnet (chain 1315)");
+            // Verify the switch actually took effect — wallets may report success
+            // without flipping the chain if they only added it as a suggestion.
+            const after = await window.ethereum.request({ method: "eth_chainId" });
+            if (parseInt(after, 16) !== 1315) {
+              console.warn("Chain switch did not take effect (still on", after, ")");
+            }
+          } catch (switchError: any) {
+            // 4001 = user rejected; 4902 = chain not added to wallet.
+            const code = switchError?.code;
+            if (code === 4001) {
+              console.warn("User rejected chain switch to Aeneid testnet");
+            } else if (code === 4902) {
+              console.warn("Aeneid testnet not added to wallet");
+            } else {
+              console.warn("Could not switch to Aeneid testnet (chain 1315):", switchError);
+            }
           }
         }
 
