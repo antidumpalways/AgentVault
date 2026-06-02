@@ -2,6 +2,15 @@
 
 import { useState, useEffect, createContext, useContext, ReactNode } from "react";
 
+interface Eip1193Provider {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  isMetaMask?: boolean;
+  isBitget?: boolean;
+  isTokenPocket?: boolean;
+  isTrust?: boolean;
+  providers?: Eip1193Provider[];
+}
+
 interface WalletContextType {
   address: string | null;
   isConnected: boolean;
@@ -39,23 +48,32 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
     setIsConnecting(true);
     try {
-      if (window.ethereum) {
-        const accounts = (await window.ethereum.request({
+      // Pick the right provider when multiple wallets are installed.
+      // EIP-5749: window.ethereum.providers is an array of all injected providers.
+      // Falls back to window.ethereum directly if the array isn't present.
+      const eth = window.ethereum;
+      const providers: Eip1193Provider[] | undefined = eth?.providers ?? (eth ? [eth] : undefined);
+      const provider = providers?.find((p) => p.isBitget)
+        ?? providers?.find((p) => p.isMetaMask)
+        ?? providers?.[0];
+
+      if (provider) {
+        const accounts = (await provider.request({
           method: "eth_requestAccounts",
         })) as string[];
 
         // Check chain
-        const chainId = await window.ethereum.request({ method: "eth_chainId" });
+        const chainId = await provider.request({ method: "eth_chainId" });
         const decimalChainId = parseInt(String(chainId), 16);
         if (decimalChainId !== 1315) {
           try {
-            await window.ethereum.request({
+            await provider.request({
               method: "wallet_switchEthereumChain",
               params: [{ chainId: "0x523" }],
             });
             // Verify the switch actually took effect — wallets may report success
             // without flipping the chain if they only added it as a suggestion.
-            const after = await window.ethereum.request({ method: "eth_chainId" });
+            const after = await provider.request({ method: "eth_chainId" });
             if (parseInt(String(after), 16) !== 1315) {
               console.warn("Chain switch did not take effect (still on", after, ")");
             }
@@ -104,8 +122,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 // Add window.ethereum type
 declare global {
   interface Window {
-    ethereum?: {
-      request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-    };
+    ethereum?: Eip1193Provider;
   }
 }
