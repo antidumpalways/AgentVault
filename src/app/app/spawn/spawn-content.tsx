@@ -111,7 +111,7 @@ export default function SpawnContent() {
         {!createdAgent ? (
           <div className="space-y-5">
             {!isConnected ? (
-              <button onClick={connect} className="w-full bg-[#00d9ff] text-[#0a0e27] font-mono text-[11px] tracking-widest py-3 hover:bg-[#00e6ff] transition-colors font-semibold">
+              <button type="button" onClick={connect} className="w-full bg-[#00d9ff] text-[#0a0e27] font-mono text-[11px] tracking-widest py-3 hover:bg-[#00e6ff] transition-colors font-semibold">
                 CONNECT WALLET
               </button>
             ) : (
@@ -146,6 +146,7 @@ export default function SpawnContent() {
             )}
 
             <button
+              type="button"
               onClick={handleSpawn}
               disabled={isCreating || !agentName.trim() || !isConnected}
               className="w-full bg-[#00d9ff] text-[#0a0e27] font-mono text-[11px] tracking-widest py-3 hover:bg-[#00e6ff] transition-colors font-semibold disabled:opacity-30 disabled:cursor-not-allowed"

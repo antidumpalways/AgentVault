@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
 import { csrfCheck } from "@/lib/csrf";
+import { isNonEmptyString } from "@/lib/validate";
 
 const LLM_API_KEY = process.env.LLM_API_KEY;
 const LLM_API_URL = process.env.LLM_API_URL || "https://api.anthropic.com/v1/messages";
@@ -19,8 +20,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const { message, context } = await request.json();
-    if (!message) {
-      return NextResponse.json({ error: "Missing message" }, { status: 400 });
+    if (!isNonEmptyString(message, 8_000)) {
+      return NextResponse.json({ error: "Invalid message" }, { status: 400 });
     }
 
     const systemPrompt = context

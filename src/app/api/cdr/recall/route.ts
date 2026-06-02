@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
-import { isValidAddress } from "@/lib/validate";
+import { isValidAddress, isPositiveIntString } from "@/lib/validate";
 import { safeError } from "@/lib/apiError";
 import { csrfCheck } from "@/lib/csrf";
 
@@ -14,11 +14,8 @@ export async function POST(request: NextRequest) {
   if (csrf) return csrf;
   try {
     const { uuid, walletAddress, licenseTokenIds } = await request.json();
-    if (!uuid || !walletAddress) {
-      return NextResponse.json({ error: "Missing uuid or walletAddress" }, { status: 400 });
-    }
-    if (!isValidAddress(walletAddress)) {
-      return NextResponse.json({ error: "Invalid walletAddress" }, { status: 400 });
+    if (!isPositiveIntString(String(uuid)) || !isValidAddress(walletAddress)) {
+      return NextResponse.json({ error: "Invalid uuid or walletAddress" }, { status: 400 });
     }
 
     const rl = rateLimit(`recall:${getClientIp(request)}`, 60, 60 * 1000);

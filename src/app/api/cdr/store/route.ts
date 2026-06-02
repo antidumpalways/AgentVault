@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, getClientIp } from "@/lib/rateLimit";
-import { isValidAddress } from "@/lib/validate";
+import { isValidAddress, isNonEmptyString } from "@/lib/validate";
 import { safeError } from "@/lib/apiError";
 import { csrfCheck } from "@/lib/csrf";
 
@@ -21,8 +21,8 @@ export async function POST(request: NextRequest) {
   if (csrf) return csrf;
   try {
     const { content, walletAddress, readConditionData } = await request.json();
-    if (!content || !walletAddress) {
-      return NextResponse.json({ error: "Missing content or walletAddress" }, { status: 400 });
+    if (!isNonEmptyString(content, 32_768)) {
+      return NextResponse.json({ error: "Invalid content" }, { status: 400 });
     }
     if (!isValidAddress(walletAddress)) {
       return NextResponse.json({ error: "Invalid walletAddress" }, { status: 400 });

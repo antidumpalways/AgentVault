@@ -85,6 +85,7 @@ export default function BrainContent() {
         </div>
         {isConnected && (
           <button
+            type="button"
             onClick={loadOnChain}
             className="font-mono text-[11px] tracking-widest border border-[#1e1e1e] text-[#5a5a5a] px-4 h-9 hover:border-[#00d9ff]/50 hover:text-[#f2ede6] transition-colors"
           >
@@ -107,6 +108,7 @@ export default function BrainContent() {
                 className="flex-1 bg-[#050505] border border-[#1e1e1e] px-4 py-3 font-mono text-sm text-[#f2ede6] placeholder:text-[#3a3a3a] focus:border-[#00d9ff] focus:outline-none transition-colors"
               />
               <button
+                type="button"
                 onClick={handleRecall}
                 disabled={isRecalling || !uuid.trim()}
                 className="bg-[#00d9ff] text-[#0a0e27] font-mono text-[11px] tracking-widest px-6 hover:bg-[#00e6ff] transition-colors font-semibold disabled:opacity-30"
@@ -125,6 +127,7 @@ export default function BrainContent() {
                   const count = memories.filter((m) => m.uuid === u).length;
                   return (
                     <button
+                      type="button"
                       key={u}
                       onClick={() => setUuid(u)}
                       className={`font-mono text-[10px] px-3 py-1.5 border transition-colors ${

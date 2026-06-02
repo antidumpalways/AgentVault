@@ -42,7 +42,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
               {sidebarOpen && <span className="font-display text-sm tracking-widest text-[#f2ede6]">AGENTVAULT</span>}
             </Link>
-            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-1 hover:bg-[#1e1e1e] transition-colors text-[#5a5a5a]">
+            <button type="button" onClick={() => setSidebarOpen(!sidebarOpen)} className="p-1 hover:bg-[#1e1e1e] transition-colors text-[#5a5a5a]" aria-label="Toggle sidebar">
               {sidebarOpen ? '←' : '→'}
             </button>
           </div>

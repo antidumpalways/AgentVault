@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
     const processStep = async (
       label: string,
       build: (nonce: number) => { to: `0x${string}`; data: `0x${string}` }
-    ): Promise<{ txHash: `0x${string}`; receipt: any; nextNonce: number }> => {
+    ): Promise<{ txHash: `0x${string}`; receipt: { status: "success" | "reverted"; blockNumber: bigint; logs: readonly { address: string; topics: readonly `0x${string}`[] }[] }; nextNonce: number }> => {
       const txHash = await sendTx({ ...build(currentNonce), nonce: currentNonce });
       console.log(`${label} tx:`, txHash);
       const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
@@ -175,7 +175,7 @@ export async function POST(request: NextRequest) {
         },
         fromBlock: mintLicenseStep.receipt.blockNumber,
         toBlock: mintLicenseStep.receipt.blockNumber,
-      } as any);
+      });
       if (mintLogs.length > 0) {
         // Take the last mint (in case multiple happened in same block)
         // topic[3] is tokenId (indexed uint256)

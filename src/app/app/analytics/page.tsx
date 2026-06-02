@@ -11,7 +11,8 @@ export default function AnalyticsPage() {
     ? memories
     : memories.filter((m) => {
         const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
-        const cutoff = new Date(Date.now() - days * 86400000);
+        const MS_PER_DAY = 86_400_000;
+        const cutoff = new Date(Date.now() - days * MS_PER_DAY);
         return new Date(m.createdAt) >= cutoff;
       });
 

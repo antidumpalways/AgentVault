@@ -40,13 +40,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setIsConnecting(true);
     try {
       if (window.ethereum) {
-        const accounts = await window.ethereum.request({
+        const accounts = (await window.ethereum.request({
           method: "eth_requestAccounts",
-        });
+        })) as string[];
 
         // Check chain
         const chainId = await window.ethereum.request({ method: "eth_chainId" });
-        const decimalChainId = parseInt(chainId, 16);
+        const decimalChainId = parseInt(String(chainId), 16);
         if (decimalChainId !== 1315) {
           try {
             await window.ethereum.request({
@@ -56,12 +56,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             // Verify the switch actually took effect — wallets may report success
             // without flipping the chain if they only added it as a suggestion.
             const after = await window.ethereum.request({ method: "eth_chainId" });
-            if (parseInt(after, 16) !== 1315) {
+            if (parseInt(String(after), 16) !== 1315) {
               console.warn("Chain switch did not take effect (still on", after, ")");
             }
-          } catch (switchError: any) {
+          } catch (switchError: unknown) {
             // 4001 = user rejected; 4902 = chain not added to wallet.
-            const code = switchError?.code;
+            const code = (switchError as { code?: number })?.code;
             if (code === 4001) {
               console.warn("User rejected chain switch to Aeneid testnet");
             } else if (code === 4902) {
@@ -105,7 +105,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 declare global {
   interface Window {
     ethereum?: {
-      request: (args: { method: string; params?: any[] }) => Promise<any>;
+      request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
     };
   }
 }

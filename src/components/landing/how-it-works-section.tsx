@@ -39,7 +39,7 @@ export function HowItWorksSection() {
         <div className="grid lg:grid-cols-[280px_1fr] border-b border-[#1e1e1e]">
           <div className="border-r border-[#1e1e1e]">
             {STEPS.map((s, i) => (
-              <button key={s.id} onClick={() => setActive(i)} className={`w-full text-left border-b border-[#1e1e1e] p-6 transition-all duration-200 group ${active === i ? "bg-[#0e0e0e]" : "hover:bg-[#0a0a0a]"}`}>
+              <button type="button" key={s.id} onClick={() => setActive(i)} className={`w-full text-left border-b border-[#1e1e1e] p-6 transition-all duration-200 group ${active === i ? "bg-[#0e0e0e]" : "hover:bg-[#0a0a0a]"}`}>
                 <div className="flex items-center justify-between mb-3">
                   <span className="font-mono text-[9px] text-[#3a3a3a] tracking-widest">{s.tag}</span>
                   <span className="font-mono text-[10px] text-[#3a3a3a]">{s.id}</span>

@@ -48,7 +48,7 @@ export function TestimonialsSection() {
               <div className="font-mono text-[10px] text-[#3a3a3a] tracking-widest mt-2">{t.metricLabel}</div>
             </div>
             <div className="p-6 flex items-center gap-2">
-              {TESTIMONIALS.map((_, i) => (<button key={i} onClick={() => { setFading(true); setTimeout(() => { setActive(i); setFading(false); }, 250); }} className={`h-1 transition-all duration-300 ${i === active ? "w-8 bg-[#2196f3]" : "w-2 bg-[#2e2e2e] hover:bg-[#5a5a5a]"}`} />))}
+              {TESTIMONIALS.map((_, i) => (<button type="button" aria-label={`Show testimonial ${i + 1}`} key={i} onClick={() => { setFading(true); setTimeout(() => { setActive(i); setFading(false); }, 250); }} className={`h-1 transition-all duration-300 ${i === active ? "w-8 bg-[#2196f3]" : "w-2 bg-[#2e2e2e] hover:bg-[#5a5a5a]"}`} />))}
             </div>
           </div>
         </div>

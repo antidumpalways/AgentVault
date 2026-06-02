@@ -125,7 +125,7 @@ export default function TrainContent() {
                 <span className="font-mono text-[9px] text-[#3a3a3a]">CDR ACTIVE</span>
               </div>
             ) : (
-              <button onClick={connect} className="font-mono text-[10px] text-[#00d9ff] hover:text-[#00e6ff] transition-colors">CONNECT</button>
+              <button type="button" onClick={connect} className="font-mono text-[10px] text-[#00d9ff] hover:text-[#00e6ff] transition-colors">CONNECT</button>
             )}
           </div>
         </div>
