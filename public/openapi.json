@@ -1,0 +1,524 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "AgentVault API",
+    "version": "0.1.0",
+    "description": "HTTP API for AgentVault — encrypted AI agent memory on Story Protocol. All POST endpoints require CSRF-safe Origin/Referer headers (allow-list: localhost:3000, NEXT_PUBLIC_SITE_URL, VERCEL_URL). All endpoints that hit the chain are rate-limited per IP.\n\n## Architecture\n\nAgentVault exposes endpoints for:\n- **CDR** — Confidential Data Rails threshold encryption (store / recall memory on-chain)\n- **Story** — IP Asset + License Token registration\n- **LLM** — Anthropic Sonnet inference proxy\n- **Contract** — On-chain reads of the AgentVault.sol registry\n- **Wallet** — IP balance check + server-side IP drip for testnet onboarding\n- **License** — Enumerate license tokens held by a wallet\n\n## Cross-cutting headers\n\n| Header | Required | Notes |\n|--------|----------|-------|\n| `Content-Type` | yes (POST) | `application/json` |\n| `Origin` | yes (POST) | Must match CSRF allow-list |\n\n## Error format\n\nAll errors return `{ \"error\": \"<message>\" }` with an appropriate 4xx/5xx status. Rate-limited responses include `resetMs` (ms until limit resets) or `retryInMs` / `retryInMin` for wallet cooldowns.",
+    "contact": {
+      "name": "AgentVault",
+      "url": "https://github.com/antidumpalways/AgentVault"
+    },
+    "license": {
+      "name": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Local development"
+    },
+    {
+      "url": "https://agentvault.vercel.app",
+      "description": "Production (Vercel)"
+    }
+  ],
+  "tags": [
+    { "name": "CDR", "description": "Threshold-encrypted memory storage and recall" },
+    { "name": "Story", "description": "Story Protocol IP Asset + License registration" },
+    { "name": "LLM", "description": "Anthropic Claude inference proxy" },
+    { "name": "Contract", "description": "On-chain reads of AgentVault.sol registry" },
+    { "name": "Wallet", "description": "IP balance + testnet drip" },
+    { "name": "License", "description": "License token enumeration" }
+  ],
+  "paths": {
+    "/api/cdr/store": {
+      "post": {
+        "tags": ["CDR"],
+        "summary": "Encrypt and store a memory on-chain via CDR",
+        "description": "Allocates a CDR vault, encrypts the content with the global DKG public key using TDH2 threshold encryption, and writes the ciphertext on-chain. The server deployer wallet pays for the tx. Returns the vault UUID and tx hash.",
+        "operationId": "storeMemory",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CDRStoreRequest" },
+              "example": {
+                "content": "User: hello\nAgent: hi there",
+                "walletAddress": "0x936CDB5dD5DCE69a2DeC06299C986E7798ab274B",
+                "readConditionData": "0x..."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Memory encrypted and stored",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CDRStoreResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "403": { "$ref": "#/components/responses/CSRF" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/api/cdr/recall": {
+      "post": {
+        "tags": ["CDR"],
+        "summary": "Decrypt a memory from a CDR vault",
+        "description": "Submits a read request to the CDR consumer. DKG validators produce partial decryptions which are combined client-side. The combined symmetric key decrypts the ciphertext. If `licenseTokenIds` is provided, the request is authorized against the LicenseReadCondition; otherwise it falls back to the owner-only flow.",
+        "operationId": "recallMemory",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CDRRecallRequest" },
+              "example": {
+                "uuid": 4936,
+                "walletAddress": "0x936CDB5dD5DCE69a2DeC06299C986E7798ab274B",
+                "licenseTokenIds": ["68084"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Memory decrypted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CDRRecallResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "403": { "$ref": "#/components/responses/CSRF" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/api/story/setup": {
+      "post": {
+        "tags": ["Story"],
+        "summary": "Mint NFT, register IP Asset, attach license terms, mint license token",
+        "description": "Runs the full 4-step Story Protocol onboarding for one agent. The NFT is minted to the user's wallet (user owns the IP Asset). All 4 transactions are serialized with a nonce lock to prevent conflicts. Returns the resulting `ipId`, `licenseTokenId`, `readConditionData` blob, and tx hashes for each step.",
+        "operationId": "storySetup",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/StorySetupRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Story setup complete",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StorySetupResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "403": { "$ref": "#/components/responses/CSRF" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/api/llm/chat": {
+      "post": {
+        "tags": ["LLM"],
+        "summary": "Send a message to the configured LLM (Anthropic Sonnet by default)",
+        "description": "Proxies a chat completion to Anthropic Messages API. The server optionally injects a system prompt with the agent's name and a truncated conversation history. If `LLM_API_KEY` is not configured, returns a deterministic fallback reply (useful for offline demos).",
+        "operationId": "llmChat",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LLMChatRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Chat response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LLMChatResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "403": { "$ref": "#/components/responses/CSRF" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/api/contract": {
+      "post": {
+        "tags": ["Contract"],
+        "summary": "Read on-chain data from the AgentVault contract",
+        "description": "Dispatcher endpoint. Pass `action` to select which read to perform against the deployed AgentVault.sol. Available actions: `getUserAgents`, `checkAccess`, `getAgentMemoryCount`.",
+        "operationId": "contractRead",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  { "$ref": "#/components/schemas/ContractGetUserAgentsRequest" },
+                  { "$ref": "#/components/schemas/ContractCheckAccessRequest" },
+                  { "$ref": "#/components/schemas/ContractGetAgentMemoryCountRequest" }
+                ],
+                "discriminator": {
+                  "propertyName": "action",
+                  "mapping": {
+                    "getUserAgents": "#/components/schemas/ContractGetUserAgentsRequest",
+                    "checkAccess": "#/components/schemas/ContractCheckAccessRequest",
+                    "getAgentMemoryCount": "#/components/schemas/ContractGetAgentMemoryCountRequest"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Result depends on action",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ContractResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "403": { "$ref": "#/components/responses/CSRF" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/api/wallet/balance": {
+      "post": {
+        "tags": ["Wallet"],
+        "summary": "Check native IP balance of a wallet",
+        "description": "Returns the IP balance and whether it meets the minimum required to spawn an agent (currently 0.05 IP).",
+        "operationId": "walletBalance",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/WalletAddressRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Balance",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WalletBalanceResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "403": { "$ref": "#/components/responses/CSRF" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/api/wallet/drip": {
+      "post": {
+        "tags": ["Wallet"],
+        "summary": "Drip testnet IP from the server wallet (for demo onboarding)",
+        "description": "Sends 0.1 IP from the deployer wallet to the requested address. Cooldown: 1 drip per wallet per hour. Rate limit: 10 drips per IP per hour. Returns 503 if the deployer wallet is low on IP. This endpoint exists so demo users can interact with the chain without external faucets.",
+        "operationId": "walletDrip",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/WalletAddressRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Drip sent",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WalletDripResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "403": { "$ref": "#/components/responses/CSRF" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/ServerError" },
+          "503": {
+            "description": "Server wallet is low on IP",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "Server wallet is low on IP. Ask the operator to refill." }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/license/list-owned": {
+      "post": {
+        "tags": ["License"],
+        "summary": "List license token IDs held by a wallet",
+        "description": "Enumerates all license tokens the wallet currently owns. Used by the UI to surface 'licenses I received' and by external clients to discover which vaults they can decrypt.",
+        "operationId": "licenseListOwned",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/WalletAddressRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token IDs",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LicenseListOwnedResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "403": { "$ref": "#/components/responses/CSRF" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Address": {
+        "type": "string",
+        "description": "0x-prefixed EVM address (20 bytes hex)",
+        "pattern": "^0x[a-fA-F0-9]{40}$",
+        "example": "0x936CDB5dD5DCE69a2DeC06299C986E7798ab274B"
+      },
+      "TxHash": {
+        "type": "string",
+        "description": "0x-prefixed transaction hash (32 bytes hex)",
+        "pattern": "^0x[a-fA-F0-9]{64}$"
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": { "type": "string" },
+          "resetMs": { "type": "integer", "description": "Rate limit: ms until limit resets" },
+          "retryInMs": { "type": "integer", "description": "Cooldown: ms until next allowed call" },
+          "retryInMin": { "type": "integer", "description": "Cooldown: minutes until next allowed call" }
+        }
+      },
+      "WalletAddressRequest": {
+        "type": "object",
+        "required": ["walletAddress"],
+        "properties": {
+          "walletAddress": { "$ref": "#/components/schemas/Address" }
+        }
+      },
+      "CDRStoreRequest": {
+        "type": "object",
+        "required": ["content", "walletAddress"],
+        "properties": {
+          "content": { "type": "string", "maxLength": 32768, "description": "Plaintext to encrypt and store" },
+          "walletAddress": { "$ref": "#/components/schemas/Address" },
+          "readConditionData": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]*$",
+            "description": "Optional ABI-encoded data for the LicenseReadCondition. If omitted, the vault is owner-only. Use the `readConditionData` returned by /api/story/setup to enable license-gated reads."
+          }
+        }
+      },
+      "CDRStoreResponse": {
+        "type": "object",
+        "required": ["success", "uuid", "txHash"],
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "uuid": { "type": "string", "description": "Numeric vault ID as a string" },
+          "txHash": { "$ref": "#/components/schemas/TxHash" },
+          "memoryFile": { "type": "string", "description": "Suggeste filename for the plaintext (e.g. `0x936cdb5d-memory-4936.md`)" },
+          "message": { "type": "string" }
+        }
+      },
+      "CDRRecallRequest": {
+        "type": "object",
+        "required": ["uuid", "walletAddress"],
+        "properties": {
+          "uuid": { "type": "integer", "minimum": 1, "description": "Vault UUID to recall" },
+          "walletAddress": { "$ref": "#/components/schemas/Address" },
+          "licenseTokenIds": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "License token IDs authorizing the read. Omit for owner-only recall."
+          }
+        }
+      },
+      "CDRRecallResponse": {
+        "type": "object",
+        "required": ["success", "content", "txHash"],
+        "properties": {
+          "success": { "type": "boolean" },
+          "content": { "type": "string", "description": "Decrypted plaintext" },
+          "txHash": { "$ref": "#/components/schemas/TxHash" },
+          "message": { "type": "string" }
+        }
+      },
+      "StorySetupRequest": {
+        "type": "object",
+        "required": ["walletAddress"],
+        "properties": {
+          "walletAddress": { "$ref": "#/components/schemas/Address", "description": "Wallet that will own the IP Asset. Must hold IP for gas (check via /api/wallet/balance)." }
+        }
+      },
+      "StorySetupResponse": {
+        "type": "object",
+        "required": ["success", "ipId", "licenseTokenId", "readConditionData"],
+        "properties": {
+          "success": { "type": "boolean" },
+          "ipId": { "type": "string", "description": "Address of the registered IP Asset" },
+          "licenseTokenId": { "type": "string", "description": "License token ID minted to the user" },
+          "licenseTermsId": { "type": "string", "example": "2054" },
+          "readConditionData": { "type": "string", "description": "ABI-encoded blob to pass to /api/cdr/store for license-gated recall" },
+          "mintTx": { "$ref": "#/components/schemas/TxHash" },
+          "registerTx": { "$ref": "#/components/schemas/TxHash" },
+          "attachTx": { "$ref": "#/components/schemas/TxHash" },
+          "mintLicenseTx": { "$ref": "#/components/schemas/TxHash" }
+        }
+      },
+      "LLMChatRequest": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": { "type": "string", "maxLength": 8000 },
+          "context": {
+            "type": "object",
+            "properties": {
+              "agentName": { "type": "string" },
+              "history": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["role", "content"],
+                  "properties": {
+                    "role": { "type": "string", "enum": ["user", "assistant"] },
+                    "content": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "LLMChatResponse": {
+        "type": "object",
+        "required": ["success", "content"],
+        "properties": {
+          "success": { "type": "boolean" },
+          "content": { "type": "string", "description": "Assistant reply" }
+        }
+      },
+      "ContractGetUserAgentsRequest": {
+        "type": "object",
+        "required": ["action", "userAddress"],
+        "properties": {
+          "action": { "type": "string", "enum": ["getUserAgents"] },
+          "userAddress": { "$ref": "#/components/schemas/Address" }
+        }
+      },
+      "ContractCheckAccessRequest": {
+        "type": "object",
+        "required": ["action", "agentId", "userAddress"],
+        "properties": {
+          "action": { "type": "string", "enum": ["checkAccess"] },
+          "agentId": { "type": "integer" },
+          "userAddress": { "$ref": "#/components/schemas/Address" }
+        }
+      },
+      "ContractGetAgentMemoryCountRequest": {
+        "type": "object",
+        "required": ["action", "agentId"],
+        "properties": {
+          "action": { "type": "string", "enum": ["getAgentMemoryCount"] },
+          "agentId": { "type": "integer" }
+        }
+      },
+      "ContractResponse": {
+        "type": "object",
+        "required": ["success"],
+        "properties": {
+          "success": { "type": "boolean" },
+          "agents": { "type": "array", "items": { "type": "integer" }, "description": "Returned when action=getUserAgents" },
+          "hasAccess": { "type": "boolean", "description": "Returned when action=checkAccess" },
+          "count": { "type": "string", "description": "Returned when action=getAgentMemoryCount" }
+        }
+      },
+      "WalletBalanceResponse": {
+        "type": "object",
+        "required": ["success", "balanceWei", "balanceIp", "hasSufficientFunds"],
+        "properties": {
+          "success": { "type": "boolean" },
+          "address": { "$ref": "#/components/schemas/Address" },
+          "balanceWei": { "type": "string", "description": "Balance in wei as a string" },
+          "balanceIp": { "type": "string", "description": "Balance in IP (human-readable)" },
+          "hasSufficientFunds": { "type": "boolean", "description": "True if balance >= 0.05 IP" },
+          "requiredIp": { "type": "string", "example": "0.05" }
+        }
+      },
+      "WalletDripResponse": {
+        "type": "object",
+        "required": ["success", "txHash", "amountWei", "amountIp", "recipient"],
+        "properties": {
+          "success": { "type": "boolean" },
+          "txHash": { "$ref": "#/components/schemas/TxHash" },
+          "amountWei": { "type": "string" },
+          "amountIp": { "type": "string", "example": "0.1" },
+          "recipient": { "$ref": "#/components/schemas/Address" },
+          "message": { "type": "string" }
+        }
+      },
+      "LicenseListOwnedResponse": {
+        "type": "object",
+        "required": ["success", "tokenIds", "count"],
+        "properties": {
+          "success": { "type": "boolean" },
+          "tokenIds": { "type": "array", "items": { "type": "string" } },
+          "count": { "type": "integer" }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Validation failed",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      },
+      "CSRF": {
+        "description": "CSRF check failed (Origin/Referer not in allow-list)",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" }, "example": { "error": "CSRF check failed" } } }
+      },
+      "RateLimited": {
+        "description": "Rate limit or cooldown exceeded",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      },
+      "ServerError": {
+        "description": "Unexpected server error",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      }
+    }
+  }
+}

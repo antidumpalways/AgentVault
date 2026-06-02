@@ -305,42 +305,42 @@ CDR (Confidential Data Rails) is Story Protocol's threshold encryption layer. Da
 
 ## API Endpoints
 
-### POST /api/cdr/store
-Encrypt and store memory via CDR threshold encryption.
-```json
-{ "content": "...", "walletAddress": "0x...", "readConditionData": "0x..." }
-// → { "success": true, "uuid": "4936", "txHash": "0x..." }
-```
+Full OpenAPI 3.0 spec is served at **`/openapi.json`** and rendered at **`/docs`** (Swagger UI). Both are generated alongside the code; the spec is the source of truth for external clients building against the protocol.
 
-### POST /api/cdr/recall
-Decrypt memory from CDR vault via validator partial decryptions.
-```json
-{ "uuid": 4936, "walletAddress": "0x...", "licenseTokenIds": ["..."] }
-// → { "success": true, "content": "...", "txHash": "0x..." }
-```
-
-### POST /api/llm/chat
-Anthropic Sonnet 3.5 inference.
-```json
-{ "message": "...", "context": { "agentName": "...", "history": [...] } }
-// → { "success": true, "content": "..." }
-```
-
-### POST /api/story/setup
-Full Story Protocol setup: mint NFT → register IP Asset → attach license terms → mint license token.
-```json
-{ "walletAddress": "0x..." }
-// → { "success": true, "ipId": "0x...", "licenseTokenId": "68084", "readConditionData": "0x..." }
-```
-
-### POST /api/license/list-owned
-Enumerate license token IDs held by a wallet. Used to surface "licenses I received" in the UI and by external clients to discover which vaults they can decrypt.
-```json
-{ "walletAddress": "0x..." }
-// → { "success": true, "tokenIds": ["68084", "68091"], "count": 2 }
-```
+| Tag | Endpoint | Summary |
+|-----|----------|---------|
+| CDR | `POST /api/cdr/store` | Encrypt + store memory on-chain via TDH2 threshold encryption |
+| CDR | `POST /api/cdr/recall` | Decrypt memory via DKG validator partials |
+| Story | `POST /api/story/setup` | Mint NFT → register IP → attach license → mint license token |
+| LLM | `POST /api/llm/chat` | Anthropic Claude inference proxy with history |
+| Contract | `POST /api/contract` | Read AgentVault registry (`getUserAgents`, `checkAccess`, `getAgentMemoryCount`) |
+| Wallet | `POST /api/wallet/balance` | Native IP balance + sufficiency check |
+| Wallet | `POST /api/wallet/drip` | Server-side 0.1 IP testnet drip (1h cooldown) |
+| License | `POST /api/license/list-owned` | Enumerate license token IDs held by a wallet |
 
 **Client-side license grant** (in `src/hooks/useGrantLicense.ts`): the IP owner signs `LicensingModule.mintLicenseTokens` directly with their wallet. No server-side signer is involved because the IP is owned by the user, not the deployer. The transaction mints an ERC-721 license token to the specified grantee address.
+
+### Quick examples
+
+```bash
+# Check balance
+curl -X POST http://localhost:3000/api/wallet/balance \
+  -H "Content-Type: application/json" \
+  -H "Origin: http://localhost:3000" \
+  -d '{"walletAddress": "0x936CDB5dD5DCE69a2DeC06299C986E7798ab274B"}'
+
+# Store encrypted memory
+curl -X POST http://localhost:3000/api/cdr/store \
+  -H "Content-Type: application/json" \
+  -H "Origin: http://localhost:3000" \
+  -d '{"content": "Hello, agent", "walletAddress": "0x..."}'
+
+# Recall with license token
+curl -X POST http://localhost:3000/api/cdr/recall \
+  -H "Content-Type: application/json" \
+  -H "Origin: http://localhost:3000" \
+  -d '{"uuid": 4936, "walletAddress": "0x...", "licenseTokenIds": ["68084"]}'
+```
 
 ---
 
