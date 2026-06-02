@@ -26,7 +26,7 @@ export function FooterSection() {
               <div className="w-8 h-8 border border-[#00d9ff] flex items-center justify-center relative"><div className="w-2.5 h-2.5 bg-[#00d9ff]" /><div className="absolute inset-0 bg-[#00d9ff]/10 group-hover:bg-[#00d9ff]/20 transition-colors" /></div>
               <span className="font-display text-2xl tracking-[0.12em] text-[#f2ede6]">AGENTVAULT</span>
             </a>
-            <p className="text-sm text-[#3a3a3a] leading-relaxed max-w-xs font-mono">Encrypted, secure memory for AI agents. Own your data. Monetize your intelligence.</p>
+            <p className="text-sm text-[#3a3a3a] leading-relaxed max-w-xs font-mono">Encrypted, on-chain memory for AI agents. Your IP. Your license. Your agent.</p>
             <div className="flex gap-5 mt-6">{["TWITTER", "GITHUB", "DISCORD"].map(s => (<a key={s} href="#" className="font-mono text-[10px] tracking-widest text-[#3a3a3a] hover:text-[#2196f3] transition-colors">{s} ↗</a>))}</div>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">

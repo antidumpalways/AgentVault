@@ -7,7 +7,7 @@ const navLinks = [
   { name: "FEATURES", href: "#features" },
   { name: "HOW IT WORKS", href: "#how-it-works" },
   { name: "SECURITY", href: "#security" },
-  { name: "DOCS", href: "#docs" },
+  { name: "DOCS", href: "/docs" },
 ];
 
 export function Navigation() {

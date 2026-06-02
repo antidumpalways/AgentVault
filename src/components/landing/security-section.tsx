@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const CERTS = ["SOC_2_TYPE_II", "ISO_27001", "HIPAA", "GDPR", "CCPA"];
+const CERTS = ["STORY IP ASSET", "CDR · DKG-ENCRYPTED", "LICENSE-GATED RECALL", "NON-CUSTODIAL", "OPEN SOURCE"];
 const FEATURES = [
-  { id: "01", tag: "ENCRYPTION", title: "ZERO-KNOWLEDGE STORAGE", desc: "All memory encrypted with agent-owned keys. Only the agent can decrypt and use its memories." },
-  { id: "02", tag: "OWNERSHIP", title: "CRYPTOGRAPHIC PROOFS", desc: "Every memory is cryptographically signed with agent keypairs. Proof-of-ownership that survives any third party." },
-  { id: "03", tag: "AUDITABILITY", title: "IMMUTABLE LOG", desc: "Every access, modification, and sharing is recorded in append-only logs. Compliance by design." },
-  { id: "04", tag: "COMPLIANCE", title: "ENTERPRISE GRADE", desc: "SOC 2 Type II, GDPR, and CCPA ready. Zero-knowledge architecture means we cannot violate your privacy." },
+  { id: "01", tag: "ENCRYPTION", title: "THRESHOLD-ENCRYPTED STORAGE", desc: "Memories encrypted via Story CDR's distributed key generation. Decryption requires network validator consensus, not a single keyholder." },
+  { id: "02", tag: "OWNERSHIP", title: "ON-CHAIN IP PROOFS", desc: "Every agent is a Story Protocol IP Asset. Ownership and license grants are provable on-chain — verifiable in any block explorer." },
+  { id: "03", tag: "AUDITABILITY", title: "ON-CHAIN CDR LOG", desc: "Every encrypt/recall transaction is recorded on Story Aeneid. The full memory lifecycle is auditable from your wallet." },
+  { id: "04", tag: "ACCESS", title: "LICENSE-GATED RECALL", desc: "Memory recall requires a Story license token. You decide who decrypts your data — not a platform admin." },
 ];
 
 export function SecuritySection() {
@@ -38,8 +38,8 @@ export function SecuritySection() {
           ))}
         </div>
         <div className="py-5 flex items-center justify-between">
-          <span className="font-mono text-[10px] text-[#3a3a3a]">ZERO-KNOWLEDGE · CRYPTOGRAPHICALLY SIGNED · IMMUTABLY LOGGED</span>
-          <a href="#" className="font-mono text-[10px] text-[#00d9ff] hover:underline tracking-wider">SECURITY WHITEPAPER →</a>
+          <span className="font-mono text-[10px] text-[#3a3a3a]">THRESHOLD-ENCRYPTED · ON-CHAIN IP · LICENSE-GATED READS</span>
+          <a href="/docs" className="font-mono text-[10px] text-[#00d9ff] hover:underline tracking-wider">API REFERENCE →</a>
         </div>
       </div>
     </section>

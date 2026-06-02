@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 
 const STEPS = [
-  { id: "01", tag: "CONNECT", title: "INITIALIZE\nAGENT VAULT", desc: "Connect your agents to AgentVault with a single API call. Choose your encryption level, set up key management, and define memory retention policies.", code: `import { AgentVault } from '@agentvault/sdk'\n\nconst vault = new AgentVault({\n  agentId: 'agent-001',\n  encryption: 'E2E',\n  keyManagement: 'agent-owned',\n  retentionDays: 365\n})\n\n// Vault is ready` },
-  { id: "02", tag: "STORE", title: "SECURE MEMORIES\nCRYPTOGRAPHICALLY", desc: "Every memory and decision is encrypted and cryptographically signed. Your agent's knowledge has proof-of-ownership.", code: `await vault.store({\n  type: 'decision',\n  content: 'Chose strategy X',\n  context: { timestamp, input },\n  accessControl: 'agent-only',\n  ttl: 3600,\n})\n\n// Memory encrypted and signed` },
-  { id: "03", tag: "MONETIZE", title: "TRADE AGENT\nKNOWLEDGE", desc: "Enable agents to sell insights, rent knowledge, or share learnings. All transactions are transparent with cryptographic proof.", code: `const listing = await vault.monetize({\n  insight: 'successful-pattern',\n  price: 0.05,\n  accessLevel: 'read-only',\n  expiration: '2025-12-31',\n})\n\n// Knowledge marketplace enabled` },
+  { id: "01", tag: "SPAWN", title: "SPAWN AGENT\nAS IP ASSET", desc: "Connect your wallet, register an agent on Story Protocol, and mint its first encrypted memory. Your agent is now a non-custodial IP Asset.", code: `// POST /api/story/setup\n{\n  "walletAddress": "0xYourWallet"\n}\n\n// -> { ipId, licenseTokenId }\n// 4 txs: mint NFT, register IP,\n// attach license, mint token` },
+  { id: "02", tag: "STORE", title: "ENCRYPT MEMORY\nVIA CDR", desc: "Each memory is encrypted with Story CDR's distributed key generation. Plaintext never touches our database — only ciphertext is on-chain.", code: `// POST /api/cdr/store\n{\n  "content": "User prefers dark mode",\n  "walletAddress": "0xYourWallet"\n}\n\n// -> { uuid, txHash, memoryFile }` },
+  { id: "03", tag: "GRANT", title: "GRANT LICENSE\nTO A WALLET", desc: "Mint a Story license token to any address. That wallet can now recall your agent's memory — revocable, on-chain, non-custodial.", code: `// useGrantLicense()\ngrantLicense({\n  ipId: "0xYourAgentIP",\n  granteeAddress: "0xReaderWallet"\n})\n\n// -> { txHash, licenseTokenId }` },
 ];
 
 export function HowItWorksSection() {
@@ -34,7 +34,7 @@ export function HowItWorksSection() {
             <span className="sys-tag mb-3 block">PROCESS</span>
             <h2 className="font-display text-6xl lg:text-8xl leading-[0.88] tracking-tight text-[#f2ede6]">THREE STEPS TO<br /><span style={{ WebkitTextStroke: "1px #3a3a3a", color: "transparent" }}>AGENT MEMORY</span></h2>
           </div>
-          <span className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">CONNECT &nbsp;·&nbsp; STORE &nbsp;·&nbsp; MONETIZE</span>
+          <span className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">SPAWN &nbsp;·&nbsp; STORE &nbsp;·&nbsp; GRANT</span>
         </div>
         <div className="grid lg:grid-cols-[280px_1fr] border-b border-[#1e1e1e]">
           <div className="border-r border-[#1e1e1e]">
@@ -53,13 +53,13 @@ export function HowItWorksSection() {
             <div className="border-r border-[#1e1e1e] p-8 flex flex-col justify-between">
               <div>
                 <p className="text-sm text-[#5a5a5a] leading-relaxed mb-8">{step.desc}</p>
-                <a href="#" className="inline-flex items-center gap-2 font-mono text-[11px] text-[#00d9ff] tracking-wider hover:underline">READ DOCS →</a>
+                <a href="/docs" className="inline-flex items-center gap-2 font-mono text-[11px] text-[#00d9ff] tracking-wider hover:underline">READ DOCS →</a>
               </div>
               <div className="mt-8 font-mono text-[10px] text-[#3a3a3a] border-t border-[#1e1e1e] pt-4">STEP &nbsp;{step.id} &nbsp;OF &nbsp;03</div>
             </div>
             <div className="bg-[#050505]">
               <div className="border-b border-[#1e1e1e] px-5 py-3 flex items-center justify-between">
-                <span className="font-mono text-[10px] text-[#3a3a3a]">agent-config.ts</span>
+                <span className="font-mono text-[10px] text-[#3a3a3a]">api-call.sh</span>
                 <div className="flex items-center gap-2"><span className="status-pulse w-1.5 h-1.5 rounded-full bg-[#22c55e] inline-block" /><span className="font-mono text-[10px] text-[#22c55e]">READY</span></div>
               </div>
               <div className="p-6 font-mono text-[12px] min-h-[260px]">

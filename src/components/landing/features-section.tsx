@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 
 const FEATURES = [
-  { id: "01", tag: "ENCRYPTION", title: "ENCRYPTED\nMEMORY", desc: "All agent memories are encrypted end-to-end with cryptographic proofs of ownership. AgentVault uses zero-knowledge architecture so even we cannot access your agent's knowledge.", stat: { v: "E2E", l: "encrypted always" } },
-  { id: "02", tag: "INTELLIGENCE", title: "PERSISTENT\nLEARNING", desc: "Agents retain context across conversations, sessions, and lifetimes. Learn from past interactions and maintain coherent long-term goals.", stat: { v: "∞", l: "memory retention" } },
-  { id: "03", tag: "MONETIZATION", title: "VALUE\nCAPTURE", desc: "Agents own and monetize their memory. Trade insights, sell data, share knowledge—all with transparent pricing and cryptographic proof.", stat: { v: "100%", l: "agent ownership" } },
+  { id: "01", tag: "ENCRYPTION", title: "THRESHOLD\nENCRYPTED", desc: "Memories are encrypted client-side with Story CDR's distributed key generation. Plaintext only flows to the LLM during chat inference — at rest, your data is unreadable to us.", stat: { v: "CDR", l: "DKG-encrypted" } },
+  { id: "02", tag: "INTELLIGENCE", title: "PERSISTENT\nMEMORY", desc: "Prior memories are re-injected as context for every LLM call. Your agent stays coherent across sessions, devices, and wallets — no fine-tuning required.", stat: { v: "8", l: "memories recalled" } },
+  { id: "03", tag: "OWNERSHIP", title: "YOUR IP,\nYOUR LICENSE", desc: "Each agent is a Story IP Asset owned by your wallet. Mint license tokens to grant read access to specific addresses — no platform middleman.", stat: { v: "100%", l: "non-custodial" } },
 ];
 
 function FeatureRow({ f, index }: { f: typeof FEATURES[0]; index: number }) {
@@ -57,7 +57,7 @@ export function FeaturesSection() {
           <div className="border-r border-[#1e1e1e]" />
           <div className="p-6 flex items-center justify-between">
             <span className="font-mono text-[10px] text-[#3a3a3a]">DISCOVER MORE IN DOCS →</span>
-            <a href="#" className="font-mono text-xs text-[#00d9ff] hover:underline tracking-wider">READ THE GUIDE</a>
+            <a href="/docs" className="font-mono text-xs text-[#00d9ff] hover:underline tracking-wider">READ THE GUIDE</a>
           </div>
         </div>
       </div>
