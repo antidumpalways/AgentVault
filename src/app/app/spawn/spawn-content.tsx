@@ -28,6 +28,8 @@ export default function SpawnContent() {
   const [logs, setLogs] = useState<string[]>([]);
   const [balance, setBalance] = useState<{ balanceIp: string; hasSufficientFunds: boolean; requiredIp: string } | null>(null);
   const [checkingBalance, setCheckingBalance] = useState(false);
+  const [dripping, setDripping] = useState(false);
+  const [dripTxHash, setDripTxHash] = useState<string | null>(null);
   const { address, isConnected, connect } = useWallet();
   const { addAgent } = useAppStore();
 
@@ -79,6 +81,32 @@ export default function SpawnContent() {
       // silent
     } finally {
       setCheckingBalance(false);
+    }
+  };
+
+  const handleDrip = async () => {
+    if (!address || dripping) return;
+    setDripping(true);
+    setDripTxHash(null);
+    try {
+      const res = await fetch("/api/wallet/drip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress: address }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDripTxHash(data.txHash);
+        showToast(`Sent ${data.amountIp} IP — wait 3s, then RECHECK`, data.txHash, "success");
+        // Auto recheck after a short delay so tx confirms
+        setTimeout(() => handleRecheckBalance(), 4000);
+      } else {
+        showToast(data.error || "Drip failed", undefined, "error");
+      }
+    } catch (e) {
+      showToast("Drip request failed", undefined, "error");
+    } finally {
+      setDripping(false);
     }
   };
 
@@ -192,19 +220,24 @@ export default function SpawnContent() {
                       </svg>
                       <div className="font-mono text-[10px] text-[#f87171] space-y-1">
                         <p>INSUFFICIENT IP BALANCE — you need at least {balance.requiredIp} IP to cover 4 setup transactions (mint NFT, register IP, attach license, mint license token).</p>
-                        <p className="text-[#5a5a5a]">Claim free testnet IP from the official faucet (requires Gitcoin Passport verification), then click RECHECK.</p>
+                        <p className="text-[#5a5a5a]">Click DRIP TESTNET IP to receive 0.5 IP instantly (covers ~500 spawns). One drip per wallet per hour.</p>
+                        {dripTxHash && (
+                          <p className="text-[#22c55e]">
+                            ✓ Drip sent: {dripTxHash.slice(0, 14)}...{dripTxHash.slice(-6)} — auto-rechecking in 4s
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <a href={FAUCET_URLS.official} target="_blank" rel="noopener noreferrer" className="font-mono text-[10px] tracking-widest bg-[#f87171] text-[#0a0e27] px-4 py-2 hover:bg-[#fca5a5] transition-colors font-semibold">
-                        GET TESTNET IP →
-                      </a>
-                      <a href={FAUCET_URLS.quicknode} target="_blank" rel="noopener noreferrer" className="font-mono text-[10px] tracking-widest border border-[#1e1e1e] text-[#5a5a5a] px-4 py-2 hover:border-[#f87171]/50 hover:text-[#f2ede6] transition-colors">
-                        QUICKNODE FAUCET
-                      </a>
+                      <button type="button" onClick={handleDrip} disabled={dripping} className="font-mono text-[10px] tracking-widest bg-[#f87171] text-[#0a0e27] px-4 py-2 hover:bg-[#fca5a5] transition-colors font-semibold disabled:opacity-30 disabled:cursor-not-allowed">
+                        {dripping ? "SENDING IP..." : "DRIP TESTNET IP →"}
+                      </button>
                       <button type="button" onClick={handleRecheckBalance} disabled={checkingBalance} className="font-mono text-[10px] tracking-widest border border-[#1e1e1e] text-[#5a5a5a] px-4 py-2 hover:border-[#00d9ff]/50 hover:text-[#f2ede6] transition-colors disabled:opacity-30">
                         {checkingBalance ? "CHECKING..." : "RECHECK"}
                       </button>
+                      <a href={FAUCET_URLS.official} target="_blank" rel="noopener noreferrer" className="font-mono text-[10px] tracking-widest border border-[#1e1e1e] text-[#5a5a5a] px-4 py-2 hover:border-[#f87171]/50 hover:text-[#f2ede6] transition-colors">
+                        EXTERNAL FAUCET
+                      </a>
                     </div>
                   </div>
                 )}
