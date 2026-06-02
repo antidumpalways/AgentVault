@@ -44,8 +44,8 @@ export async function POST(request: NextRequest) {
         const err = await response.text();
         console.error("LLM API error:", err);
         return NextResponse.json(
-          { error: "LLM request failed", content: fallbackReply(message) },
-          { status: 200 }
+          { error: "LLM request failed" },
+          { status: 502 }
         );
       }
 
@@ -61,8 +61,8 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("LLM chat error:", error);
     return NextResponse.json(
-      { error: "Failed to process chat", content: fallbackReply("") },
-      { status: 200 }
+      { error: "Failed to process chat" },
+      { status: 500 }
     );
   }
 }

@@ -14,7 +14,17 @@ const chain = {
   rpcUrls: { default: { http: [RPC_URL] } },
 };
 
+let nonceLock: Promise<void> = Promise.resolve();
+
 export async function POST(request: NextRequest) {
+  // Serialize story setup requests to avoid nonce conflicts
+  const releaseLock = await new Promise<() => void>((resolve) => {
+    const prev = nonceLock;
+    let release!: () => void;
+    nonceLock = new Promise<void>((r) => { release = r; });
+    prev.then(() => resolve(release));
+  });
+
   try {
     const { walletAddress } = await request.json();
     if (!walletAddress) {
@@ -137,5 +147,7 @@ export async function POST(request: NextRequest) {
       { error: error?.message || "Story setup failed" },
       { status: 500 }
     );
+  } finally {
+    releaseLock();
   }
 }

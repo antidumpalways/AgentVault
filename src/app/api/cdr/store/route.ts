@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 let wasmInit: Promise<void> | null = null;
 
 const RPC_URL = process.env.RPC_URL || "https://aeneid.storyrpc.io";
-const STORY_API_URL = process.env.STORY_API_URL || "http://172.192.41.96:1317";
+const STORY_API_URL = process.env.STORY_API_URL || "https://aeneid.storyapi.dev";
 const OWNER_WRITE = "0x4C9bFC96d7092b590D497A191826C3dA2277c34B";
 const LICENSE_READ = "0xC0640AD4CF2CaA9914C8e5C44234359a9102f7a3";
 

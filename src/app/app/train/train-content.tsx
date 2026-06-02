@@ -44,7 +44,11 @@ export default function TrainContent() {
   useEffect(() => { if (isConnected) addLog("SYSTEM", "CDR ready."); }, [isConnected, addLog]);
 
   const getAIResponse = async (message: string): Promise<string> => {
-    const res = await fetch("/api/llm/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message, context: { agentName: "AgentVault AI", history: messages.slice(-6).map((m) => ({ role: m.role === "agent" ? "assistant" : "user", content: m.content })) } }) });
+    const res = await fetch("/api/llm/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message, context: { agentName: activeAgent?.name || "Agent", history: messages.slice(-6).map((m) => ({ role: m.role === "agent" ? "assistant" : "user", content: m.content })) } }) });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `LLM request failed (${res.status})`);
+    }
     const data = await res.json();
     return data.content || "Processed.";
   };

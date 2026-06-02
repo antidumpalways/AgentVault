@@ -1,5 +1,5 @@
 export const RPC_URL = process.env.RPC_URL || "https://aeneid.storyrpc.io";
-export const STORY_API_URL = process.env.STORY_API_URL || "http://172.192.41.96:1317";
+export const STORY_API_URL = process.env.STORY_API_URL || "https://aeneid.storyapi.dev";
 export const CHAIN_ID = 1315;
 
 export const CONTRACTS = {

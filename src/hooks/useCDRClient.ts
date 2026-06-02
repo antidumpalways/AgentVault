@@ -1,8 +1,5 @@
 "use client";
 
-// CDR Client - uses server-side API routes for CDR operations
-// This avoids webpack bundling issues with @piplabs/cdr-crypto
-
 export async function storeEncryptedMemory(
   content: string,
   walletAddress: string,
@@ -43,8 +40,7 @@ export async function recallEncryptedMemory(
   return { content: result.content, txHash: result.txHash };
 }
 
-// Contract interaction
-export async function getUserAgents(walletAddress: string) {
+export async function getUserAgentsOnChain(walletAddress: string): Promise<number[]> {
   const response = await fetch("/api/contract", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -56,7 +52,7 @@ export async function getUserAgents(walletAddress: string) {
   return result.agents;
 }
 
-export async function checkAccess(agentId: number, userAddress: string) {
+export async function checkAccessOnChain(agentId: number, userAddress: string): Promise<boolean> {
   const response = await fetch("/api/contract", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

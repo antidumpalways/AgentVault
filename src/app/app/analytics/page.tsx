@@ -7,10 +7,25 @@ export default function AnalyticsPage() {
   const { agents, memories, totalSizeKB, memoriesByType, memoriesByDay, loaded } = useAppStore()
   const [timeRange, setTimeRange] = useState('30d')
 
-  const sortedDays = Object.entries(memoriesByDay).sort(([a], [b]) => a.localeCompare(b))
+  const filteredMemories = timeRange === 'all'
+    ? memories
+    : memories.filter((m) => {
+        const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
+        const cutoff = new Date(Date.now() - days * 86400000);
+        return new Date(m.createdAt) >= cutoff;
+      });
+
+  const sortedDays = Object.entries(
+    filteredMemories.reduce((acc, m) => {
+      const day = m.createdAt.slice(0, 10);
+      acc[day] = (acc[day] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>)
+  ).sort(([a], [b]) => a.localeCompare(b));
+
   const maxCount = Math.max(...sortedDays.map(([, c]) => c), 1)
 
-  const recentMemories = [...memories].reverse().slice(0, 5)
+  const recentMemories = [...filteredMemories].reverse().slice(0, 5)
 
   return (
     <div className="space-y-8">

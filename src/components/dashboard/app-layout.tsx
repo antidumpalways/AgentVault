@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
+import { useWallet } from '@/hooks/useWallet'
 
 const AGENT_NAV = [
   { name: 'Spawn', href: '/app/spawn', icon: '⚡', desc: 'Create Agent' },
@@ -26,6 +27,8 @@ const BOTTOM_NAV = [
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const pathname = usePathname()
+  const router = useRouter()
+  const { address, disconnect } = useWallet()
 
   return (
     <div className="flex h-screen bg-[#050505]">
@@ -118,11 +121,22 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <main className="flex-1 overflow-auto">
         <div className="h-16 border-b border-[#1e1e1e] bg-[#050505] px-8 flex items-center justify-between sticky top-0 z-40">
           <div className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">
-            <span className="text-[#22c55e]">●</span> CONNECTED
+            {address ? (
+              <><span className="text-[#22c55e]">●</span> {address.slice(0, 6)}...{address.slice(-4)}</>
+            ) : (
+              <><span className="text-[#f87171]">●</span> NOT CONNECTED</>
+            )}
           </div>
           <div className="flex items-center gap-4">
             <span className="font-mono text-[10px] text-[#3a3a3a]">AENEID TESTNET</span>
-            <button className="font-mono text-[11px] text-[#00d9ff] hover:text-[#00e6ff] transition-colors">LOGOUT →</button>
+            {address && (
+              <button
+                onClick={() => { disconnect(); router.push('/'); }}
+                className="font-mono text-[11px] text-[#00d9ff] hover:text-[#00e6ff] transition-colors"
+              >
+                LOGOUT →
+              </button>
+            )}
           </div>
         </div>
         <div className="p-8">{children}</div>
