@@ -49,13 +49,14 @@ export default function AppHome() {
     return () => { cancelled = true; };
   }, [address, isConnected]);
 
-  const greeting = (() => {
+  const [greeting, setGreeting] = useState<string>('WELCOME');
+  useEffect(() => {
     const h = new Date().getHours();
-    if (h < 6) return 'GOOD EVENING';
-    if (h < 12) return 'GOOD MORNING';
-    if (h < 18) return 'GOOD AFTERNOON';
-    return 'GOOD EVENING';
-  })();
+    if (h < 6) setGreeting('GOOD EVENING');
+    else if (h < 12) setGreeting('GOOD MORNING');
+    else if (h < 18) setGreeting('GOOD AFTERNOON');
+    else setGreeting('GOOD EVENING');
+  }, []);
 
   const recentMemories = [...memories].reverse().slice(0, 3);
   const totalMemories = memories.length;
