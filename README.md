@@ -19,6 +19,7 @@ AgentVault is a platform for managing persistent, encrypted AI agent memory on S
 | **Intelligent** | Real LLM (Anthropic Sonnet 3.5) powers every agent response |
 | **IP-Protected** | Story Protocol IP Assets + License Tokens for ownership and access control |
 | **Composable** | OwnerWriteCondition + LicenseReadCondition integrate with Story Protocol |
+| **Open** | Data lives on-chain — any client with the right SDK + license token can recall memories, not just AgentVault |
 
 ### The Problem
 
@@ -85,6 +86,50 @@ User → Enter UUID → POST /api/cdr/recall
      → Partials combined client-side → original content recovered
 ```
 
+### Open Ecosystem Architecture
+
+AgentVault is **one of many clients** that can read and write the shared on-chain memory layer. The data, encryption, and access control are protocol-level — not owned by AgentVault. Any client implementing the same primitives can interoperate.
+
+```
+                ┌─────────────────────────────────────────┐
+                │     Story Protocol (Aeneid / Mainnet)   │
+                │  IP Asset Registry · LicensingModule    │
+                │  LicenseToken · DKG · CDR Validators   │
+                └────────┬────────────┬─────────────┬─────┘
+                         │            │             │
+        ┌────────────────┴──┐  ┌──────┴──────┐  ┌───┴────────────┐
+        │  AgentVault (UI)  │  │  External   │  │  Third-party   │
+        │  /app/* dashboard │  │  Agent #1   │  │  Memory Market │
+        │  (this repo)      │  │  (LangChain │  │  (license      │
+        │                   │  │  / Eliza /  │  │  trading)      │
+        │                   │  │  custom)    │  │                │
+        └───────────────────┘  └──────┬──────┘  └────────────────┘
+                                      │
+                                      │ reads via SDK
+                                      │ (open standard)
+                                      ▼
+                          ┌──────────────────────┐
+                          │  Shared Memory Layer │
+                          │  (CDR + DKG + IP)    │
+                          └──────────────────────┘
+                                      ▲
+                                      │ writes via SDK
+                          ┌───────────┴──────────┐
+                          │  Other Memory Apps   │
+                          │  (Notus, custom,     │
+                          │   research)          │
+                          └──────────────────────┘
+```
+
+**Implication:** A user's memories are not locked inside AgentVault. An external agent (LangChain, custom Node script, another dApp) can:
+1. Receive a `licenseTokenId` from the IP owner (granted via `/app/vaults` → `+ LICENSE`)
+2. Use the same `uuid` to look up the encrypted vault on-chain
+3. Call `cdr.consumer.accessCDR(uuid, licenseTokenId)` with the user's wallet signature
+4. Receive partial decryptions from the DKG and combine them locally
+5. Continue the conversation with the decrypted memory as LLM context — outside AgentVault
+
+AgentVault is the reference client, not a silo.
+
 ---
 
 ## How It Works
@@ -112,6 +157,7 @@ User → Enter UUID → POST /api/cdr/recall
 
 - View all created agents and their memory counts
 - Shows vault UUID, creation date, IP registration status
+- **Grant License** — IP owner can mint a license token to any address, transferring read access. The grantee (a human wallet, another agent, a service) can then decrypt the vault's memory using the standard CDR recall flow. License grants are signed by the user's own wallet — AgentVault never holds the IP.
 
 ### 5. Memories (`/app/memories`)
 
@@ -140,7 +186,7 @@ User → Enter UUID → POST /api/cdr/recall
 | CDR SDK | @piplabs/cdr-sdk v0.2.1 | Threshold encryption |
 | Blockchain | Story Aeneid Testnet (chainId 1315) | L1 network |
 | Smart Contracts | Solidity 0.8.26, OpenZeppelin | On-chain logic |
-| Wallet | MetaMask / window.ethereum | User authentication |
+| Wallet | EIP-5749 (Bitget, MetaMask, TokenPocket, Trust) | User authentication |
 | Persistence | localStorage (useStore hook) | Client-side data |
 
 ---
@@ -157,8 +203,8 @@ agentvault/
 │   │   │   ├── llm/chat/            # Anthropic Sonnet inference
 │   │   │   ├── story/setup/         # IP Asset + License registration
 │   │   │   ├── contract/            # AgentVault.sol interaction
-│   │   │   ├── license/mint/        # License token minting
-│   │   │   └── ipa/register/        # IP Asset registration
+│   │   │   ├── license/list-owned/  # Enumerate license tokens held by wallet
+│   │   │   └── wallet/              # balance + server-side IP drip
 │   │   ├── app/
 │   │   │   ├── spawn/               # Agent creation
 │   │   │   ├── train/               # Chat + CDR encryption
@@ -178,10 +224,11 @@ agentvault/
 │   │   ├── landing/                 # Landing page sections
 │   │   └── error-boundary.tsx       # Error boundary
 │   ├── hooks/
-│   │   ├── useStore.ts              # localStorage-backed store
+│   │   ├── useStore.ts              # localStorage-backed store (agents, memories, granted licenses)
 │   │   ├── useAppStore.tsx          # Store context provider
-│   │   ├── useWallet.tsx            # MetaMask + demo fallback
-│   │   └── useCDRClient.ts          # CDR API fetch helpers
+│   │   ├── useWallet.tsx            # EIP-5749 multi-wallet (Bitget, MetaMask, etc.) + demo fallback
+│   │   ├── useCDRClient.ts          # CDR API fetch helpers
+│   │   └── useGrantLicense.ts       # Client-side license minting via user wallet
 │   └── lib/
 │       └── constants.ts             # Contract addresses, RPC URLs
 ├── contracts/
@@ -286,6 +333,15 @@ Full Story Protocol setup: mint NFT → register IP Asset → attach license ter
 // → { "success": true, "ipId": "0x...", "licenseTokenId": "68084", "readConditionData": "0x..." }
 ```
 
+### POST /api/license/list-owned
+Enumerate license token IDs held by a wallet. Used to surface "licenses I received" in the UI and by external clients to discover which vaults they can decrypt.
+```json
+{ "walletAddress": "0x..." }
+// → { "success": true, "tokenIds": ["68084", "68091"], "count": 2 }
+```
+
+**Client-side license grant** (in `src/hooks/useGrantLicense.ts`): the IP owner signs `LicensingModule.mintLicenseTokens` directly with their wallet. No server-side signer is involved because the IP is owned by the user, not the deployer. The transaction mints an ERC-721 license token to the specified grantee address.
+
 ---
 
 ## Getting Started
@@ -354,6 +410,7 @@ See [`docs/TEE_ARCHITECTURE.md`](docs/TEE_ARCHITECTURE.md) for the complete visi
 - Spawn an agent → Story IP registration + CDR vault creation
 - Train with real AI (Anthropic Sonnet) → encrypted on-chain
 - Recall memory → threshold decryption via validators
+- Grant a license to another wallet → that address can decrypt your agent's memory
 - Browse vaults, memories, analytics
 
 Submission deadline: June 3, 2026
