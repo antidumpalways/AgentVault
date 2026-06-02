@@ -90,13 +90,14 @@ export async function POST(request: NextRequest) {
 
     let currentNonce = await publicClient.getTransactionCount({ address: account.address });
 
-    // 1. Mint NFT to deployer (server-side flow — deployer owns IP for license management)
+    // 1. Mint NFT to user's wallet — user truly owns the IP Asset.
+    //    Requires user to hold IP on Aeneid for gas (checked by client before calling).
     const mintStep = await processStep("Mint", (n) => ({
       to: SIMPLE_NFT as `0x${string}`,
       data: encodeFunctionData({
         abi: [{ inputs: [{ internalType: "address", name: "to", type: "address" }], name: "mint", outputs: [{ internalType: "uint256", name: "", type: "uint256" }], stateMutability: "nonpayable", type: "function" }],
         functionName: "mint",
-        args: [account.address as `0x${string}`],
+        args: [walletAddress as `0x${string}`],
       }),
     }));
     currentNonce = mintStep.nextNonce;
@@ -149,7 +150,7 @@ export async function POST(request: NextRequest) {
           name: "mintLicenseTokens", outputs: [{ type: "uint256" }], stateMutability: "nonpayable", type: "function",
         }],
         functionName: "mintLicenseTokens",
-        args: [ipId, PIL_TEMPLATE as `0x${string}`, licenseTermsId, BigInt(1), account.address as `0x${string}`, "0x", BigInt(0), 0],
+        args: [ipId, PIL_TEMPLATE as `0x${string}`, licenseTermsId, BigInt(1), walletAddress as `0x${string}`, "0x", BigInt(0), 0],
       }),
     }));
     currentNonce = mintLicenseStep.nextNonce;

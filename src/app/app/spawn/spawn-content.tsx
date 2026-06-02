@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { useAppStore } from "@/hooks/useAppStore";
 import { storeEncryptedMemory } from "@/hooks/useCDRClient";
 import { showToast } from "@/components/Toast";
+import { FAUCET_URLS, EXPLORER_URL } from "@/lib/constants";
 
 interface CreatedAgent {
   name: string;
@@ -25,8 +26,61 @@ export default function SpawnContent() {
   const [step, setStep] = useState(0);
   const [createdAgent, setCreatedAgent] = useState<CreatedAgent | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
+  const [balance, setBalance] = useState<{ balanceIp: string; hasSufficientFunds: boolean; requiredIp: string } | null>(null);
+  const [checkingBalance, setCheckingBalance] = useState(false);
   const { address, isConnected, connect } = useWallet();
   const { addAgent } = useAppStore();
+
+  // Check user's IP balance when wallet connects. They need ~0.05 IP to cover
+  // 4 on-chain txs (mint, register, attachLicense, mintLicense).
+  useEffect(() => {
+    if (!address) {
+      setBalance(null);
+      return;
+    }
+    let cancelled = false;
+    const check = async () => {
+      setCheckingBalance(true);
+      try {
+        const res = await fetch("/api/wallet/balance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ walletAddress: address }),
+        });
+        const data = await res.json();
+        if (!cancelled && data.success) {
+          setBalance({ balanceIp: data.balanceIp, hasSufficientFunds: data.hasSufficientFunds, requiredIp: data.requiredIp });
+        }
+      } catch (e) {
+        console.warn("Balance check failed:", e);
+      } finally {
+        if (!cancelled) setCheckingBalance(false);
+      }
+    };
+    check();
+    return () => { cancelled = true; };
+  }, [address]);
+
+  const handleRecheckBalance = async () => {
+    if (!address) return;
+    setCheckingBalance(true);
+    try {
+      const res = await fetch("/api/wallet/balance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress: address }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBalance({ balanceIp: data.balanceIp, hasSufficientFunds: data.hasSufficientFunds, requiredIp: data.requiredIp });
+        if (data.hasSufficientFunds) showToast("Balance sufficient", undefined, "success");
+      }
+    } catch {
+      // silent
+    } finally {
+      setCheckingBalance(false);
+    }
+  };
 
   const stepStatus = (i: number) => {
     if (isConnected && i === 0) return "done";
@@ -37,6 +91,10 @@ export default function SpawnContent() {
 
   const handleSpawn = async () => {
     if (!agentName.trim() || !address) return;
+    if (balance && !balance.hasSufficientFunds) {
+      showToast("Insufficient IP balance. Get testnet IP from faucet first.", undefined, "error");
+      return;
+    }
     setIsCreating(true);
     setLogs([]);
     try {
@@ -72,6 +130,8 @@ export default function SpawnContent() {
       setIsCreating(false);
     }
   };
+
+  const insufficientBalance = balance !== null && !balance.hasSufficientFunds;
 
   return (
     <div className="space-y-8">
@@ -115,9 +175,39 @@ export default function SpawnContent() {
                 CONNECT WALLET
               </button>
             ) : (
-              <div className="flex items-center gap-2 px-4 py-3 bg-[#050505] border border-[#1e1e1e]">
-                <div className="w-1.5 h-1.5 rounded-full bg-[#22c55e]" />
-                <span className="font-mono text-[10px] text-[#5a5a5a]">{address}</span>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 px-4 py-3 bg-[#050505] border border-[#1e1e1e]">
+                  <div className={`w-1.5 h-1.5 rounded-full ${balance?.hasSufficientFunds ? "bg-[#22c55e]" : "bg-[#f87171]"}`} />
+                  <span className="font-mono text-[10px] text-[#5a5a5a]">{address}</span>
+                  <span className="ml-auto font-mono text-[10px] text-[#3a3a3a]">
+                    {checkingBalance ? "CHECKING..." : balance ? `${parseFloat(balance.balanceIp).toFixed(4)} IP` : "—"}
+                  </span>
+                </div>
+
+                {insufficientBalance && balance && (
+                  <div className="border border-[#f87171]/30 bg-[#f87171]/5 p-4 space-y-3">
+                    <div className="flex items-start gap-2">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f87171" strokeWidth="2" className="mt-0.5 shrink-0">
+                        <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+                      </svg>
+                      <div className="font-mono text-[10px] text-[#f87171] space-y-1">
+                        <p>INSUFFICIENT IP BALANCE — you need at least {balance.requiredIp} IP to cover 4 setup transactions (mint NFT, register IP, attach license, mint license token).</p>
+                        <p className="text-[#5a5a5a]">Claim free testnet IP from the official faucet (requires Gitcoin Passport verification), then click RECHECK.</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <a href={FAUCET_URLS.official} target="_blank" rel="noopener noreferrer" className="font-mono text-[10px] tracking-widest bg-[#f87171] text-[#0a0e27] px-4 py-2 hover:bg-[#fca5a5] transition-colors font-semibold">
+                        GET TESTNET IP →
+                      </a>
+                      <a href={FAUCET_URLS.quicknode} target="_blank" rel="noopener noreferrer" className="font-mono text-[10px] tracking-widest border border-[#1e1e1e] text-[#5a5a5a] px-4 py-2 hover:border-[#f87171]/50 hover:text-[#f2ede6] transition-colors">
+                        QUICKNODE FAUCET
+                      </a>
+                      <button type="button" onClick={handleRecheckBalance} disabled={checkingBalance} className="font-mono text-[10px] tracking-widest border border-[#1e1e1e] text-[#5a5a5a] px-4 py-2 hover:border-[#00d9ff]/50 hover:text-[#f2ede6] transition-colors disabled:opacity-30">
+                        {checkingBalance ? "CHECKING..." : "RECHECK"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -129,7 +219,7 @@ export default function SpawnContent() {
                 onChange={(e) => setAgentName(e.target.value)}
                 placeholder="e.g., Research Agent Alpha"
                 className="w-full bg-[#050505] border border-[#1e1e1e] px-4 py-3 font-mono text-sm text-[#f2ede6] placeholder:text-[#3a3a3a] focus:border-[#00d9ff] focus:outline-none transition-colors"
-                disabled={isCreating || !isConnected}
+                disabled={isCreating || !isConnected || insufficientBalance}
               />
             </div>
 
@@ -148,10 +238,10 @@ export default function SpawnContent() {
             <button
               type="button"
               onClick={handleSpawn}
-              disabled={isCreating || !agentName.trim() || !isConnected}
+              disabled={isCreating || !agentName.trim() || !isConnected || insufficientBalance}
               className="w-full bg-[#00d9ff] text-[#0a0e27] font-mono text-[11px] tracking-widest py-3 hover:bg-[#00e6ff] transition-colors font-semibold disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              {isCreating ? "CREATING..." : "SPAWN AGENT"}
+              {isCreating ? "CREATING..." : insufficientBalance ? "NEED MORE IP — VISIT FAUCET" : "SPAWN AGENT"}
             </button>
           </div>
         ) : (
@@ -180,7 +270,7 @@ export default function SpawnContent() {
               </div>
               <div className="flex justify-between">
                 <span className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">TX</span>
-                <a href={`https://aeneid.storyscan.io/tx/${createdAgent.txHash}`} target="_blank" rel="noopener noreferrer" className="font-mono text-[10px] text-[#00d9ff] hover:text-[#00e6ff] transition-colors">
+                <a href={`${EXPLORER_URL}/tx/${createdAgent.txHash}`} target="_blank" rel="noopener noreferrer" className="font-mono text-[10px] text-[#00d9ff] hover:text-[#00e6ff] transition-colors">
                   {createdAgent.txHash.slice(0, 10)}...→
                 </a>
               </div>

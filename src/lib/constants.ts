@@ -2,6 +2,17 @@ export const RPC_URL = process.env.RPC_URL || "https://aeneid.storyrpc.io";
 export const STORY_API_URL = process.env.STORY_API_URL || "https://aeneid.storyapi.dev";
 export const CHAIN_ID = 1315;
 
+// Story Protocol Aeneid testnet faucets.
+// Both require Gitcoin Passport verification — there is no automated API.
+// User must visit one of these in a browser to claim testnet IP.
+export const FAUCET_URLS = {
+  official: "https://aeneid.faucet.story.foundation/",
+  legacy: "https://faucet.story.foundation/",
+  quicknode: "https://faucet.quicknode.com/story/testnet",
+};
+
+export const EXPLORER_URL = "https://aeneid.storyscan.io";
+
 export const CONTRACTS = {
   AGENT_VAULT: "0x7e0f1182c444ba420a1d98c81c2da05bc4d1b0a8",
   OWNER_WRITE_CONDITION: "0x4C9bFC96d7092b590D497A191826C3dA2277c34B",
