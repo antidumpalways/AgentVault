@@ -37,6 +37,9 @@ yarn-error.log*
 test-server*.log
 dev-server.log
 
+# Local-only recording / demo script (not for GitHub)
+DEMO_SCRIPT.md
+
 # Misc
 *.tsbuildinfo
 next-env.d.ts
