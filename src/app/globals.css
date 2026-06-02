@@ -1,0 +1,126 @@
+@import url("https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500;1,600&family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;1,600;1,700;1,800&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #050505;
+  --foreground: #f2ede6;
+  --surface: #0a0a0a;
+  --border: #1e1e1e;
+  --muted: #3a3a3a;
+  --accent: #00d9ff;
+  --purple: #a78bfa;
+  --blue: #2196f3;
+  --green: #22c55e;
+}
+
+* { box-sizing: border-box; }
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: "Barlow", "Inter", system-ui, sans-serif;
+}
+
+::selection {
+  background: rgba(0, 217, 255, 0.2);
+  color: #f2ede6;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1e1e1e; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #2e2e2e; }
+
+/* Font classes */
+.font-display { font-family: "Barlow Condensed", "Barlow", sans-serif; }
+.font-mono { font-family: "IBM Plex Mono", monospace; }
+
+/* Grid background */
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(0, 217, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 217, 255, 0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+/* Sys tag */
+.sys-tag {
+  @apply font-mono text-[9px] tracking-[0.2em] text-[#00d9ff] uppercase;
+  border: 1px solid rgba(0, 217, 255, 0.2);
+  @apply px-2 py-1 inline-block;
+}
+
+/* Status pulse */
+.status-pulse {
+  animation: status-pulse 2s ease-in-out infinite;
+}
+
+/* Row hover */
+.row-hover:hover {
+  background: rgba(0, 217, 255, 0.02);
+}
+
+/* Marquee */
+.marquee-fast {
+  animation: marquee 30s linear infinite;
+}
+
+/* Animations */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes draw-line {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes dot-blink {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+
+@keyframes dot-scan {
+  0% { opacity: 0.1; transform: scaleX(0.5); }
+  50% { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0.1; transform: scaleX(0.5); }
+}
+
+@keyframes dot-pulse {
+  0%, 100% { transform: scaleY(0.6); }
+  50% { transform: scaleY(1); }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 20s linear infinite;
+}
+
+/* Micro-interactions */
+.transition-instant { transition-duration: 0ms; }
+.transition-fast { transition-duration: 75ms; }

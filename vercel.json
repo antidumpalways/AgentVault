@@ -1,0 +1,10 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npx next build",
+  "outputDirectory": ".next",
+  "installCommand": "npm install",
+  "env": {
+    "RPC_URL": "https://aeneid.storyrpc.io",
+    "STORY_API_URL": "http://172.192.41.96:1317"
+  }
+}
