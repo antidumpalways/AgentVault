@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useAppStore } from "@/hooks/useAppStore";
 import { useWallet } from "@/hooks/useWallet";
-import { recallEncryptedMemory } from "@/hooks/useCDRClient";
+import { recallEncryptedMemory, getUserAgentsOnChain, checkAccessOnChain } from "@/hooks/useCDRClient";
 import { showToast } from "@/components/Toast";
 
 export default function BrainContent() {
@@ -11,10 +11,23 @@ export default function BrainContent() {
   const [foundMemories, setFoundMemories] = useState<{ role: string; content: string; agentName: string; createdAt: string }[]>([]);
   const [isRecalling, setIsRecalling] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
+  const [onChainIds, setOnChainIds] = useState<number[]>([]);
   const { memories, agents, loaded } = useAppStore();
-  const { address } = useWallet();
+  const { address, isConnected } = useWallet();
 
   const availableUuids = Array.from(new Set(memories.map((m) => m.uuid)));
+
+  const loadOnChain = async () => {
+    if (!address) return;
+    try {
+      setLogs(["[CONTRACT] Fetching on-chain agents..."]);
+      const ids = await getUserAgentsOnChain(address);
+      setOnChainIds(ids);
+      setLogs((p) => [...p, `[CONTRACT] Found ${ids.length} on-chain agent(s): [${ids.join(", ")}]`]);
+    } catch {
+      setLogs((p) => [...p, "[CONTRACT] No on-chain agents found"]);
+    }
+  };
 
   const handleRecall = async () => {
     if (!uuid.trim()) return;
@@ -67,9 +80,17 @@ export default function BrainContent() {
         <div>
           <h1 className="font-display text-4xl tracking-tight text-[#f2ede6] mb-2">BRAIN</h1>
           <p className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">
-            {loaded ? `${availableUuids.length} VAULT(S) AVAILABLE` : 'LOADING...'}
+            {loaded ? `${availableUuids.length} LOCAL VAULT(S) · ${onChainIds.length} ON-CHAIN AGENT(S)` : 'LOADING...'}
           </p>
         </div>
+        {isConnected && (
+          <button
+            onClick={loadOnChain}
+            className="font-mono text-[11px] tracking-widest border border-[#1e1e1e] text-[#5a5a5a] px-4 h-9 hover:border-[#00d9ff]/50 hover:text-[#f2ede6] transition-colors"
+          >
+            LOAD ON-CHAIN
+          </button>
+        )}
       </div>
 
       {/* Recall Form */}
@@ -98,7 +119,7 @@ export default function BrainContent() {
           {/* Quick Select */}
           {loaded && availableUuids.length > 0 && (
             <div>
-              <label className="block font-mono text-[10px] text-[#3a3a3a] tracking-widest mb-2">AVAILABLE VAULTS</label>
+              <label className="block font-mono text-[10px] text-[#3a3a3a] tracking-widest mb-2">LOCAL VAULTS</label>
               <div className="flex flex-wrap gap-2">
                 {availableUuids.map((u) => {
                   const count = memories.filter((m) => m.uuid === u).length;
@@ -120,6 +141,20 @@ export default function BrainContent() {
             </div>
           )}
 
+          {/* On-Chain Agents */}
+          {onChainIds.length > 0 && (
+            <div>
+              <label className="block font-mono text-[10px] text-[#3a3a3a] tracking-widest mb-2">ON-CHAIN AGENTS (AGENTVAULT)</label>
+              <div className="flex flex-wrap gap-2">
+                {onChainIds.map((id) => (
+                  <div key={id} className="font-mono text-[10px] px-3 py-1.5 border border-[#1e1e1e] text-[#5a5a5a]">
+                    Agent #{id}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Logs */}
           {logs.length > 0 && (
             <div className="bg-[#050505] border border-[#1e1e1e] p-4">
@@ -128,7 +163,8 @@ export default function BrainContent() {
                   <div key={i} className={
                     log.includes("ERROR") ? "text-[#f87171]"
                       : log.includes("✓") ? "text-[#22c55e]"
-                        : "text-[#5a5a5a]"
+                        : log.includes("CONTRACT") ? "text-[#a78bfa]"
+                          : "text-[#5a5a5a]"
                   }>
                     {log}
                   </div>

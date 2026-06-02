@@ -1,10 +1,28 @@
 'use client'
 
 import { useAppStore } from '@/hooks/useAppStore'
+import { useWallet } from '@/hooks/useWallet'
+import { getUserAgentsOnChain, checkAccessOnChain } from '@/hooks/useCDRClient'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 
 export default function VaultsPage() {
   const { agents, memories, loaded, totalSizeKB } = useAppStore()
+  const { address } = useWallet()
+  const [onChainIds, setOnChainIds] = useState<number[]>([])
+  const [accessMap, setAccessMap] = useState<Record<number, boolean>>({})
+
+  useEffect(() => {
+    if (!address) return
+    getUserAgentsOnChain(address).then(async (ids) => {
+      setOnChainIds(ids)
+      const access: Record<number, boolean> = {}
+      for (const id of ids) {
+        access[id] = await checkAccessOnChain(id, address)
+      }
+      setAccessMap(access)
+    }).catch(() => {})
+  }, [address])
 
   return (
     <div className="space-y-8">
@@ -23,9 +41,10 @@ export default function VaultsPage() {
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-4 gap-6">
         {[
-          { label: 'TOTAL VAULTS', value: agents.length.toString() },
+          { label: 'LOCAL VAULTS', value: agents.length.toString() },
+          { label: 'ON-CHAIN AGENTS', value: onChainIds.length.toString() },
           { label: 'TOTAL MEMORIES', value: memories.length.toString() },
           { label: 'STORAGE USED', value: `${totalSizeKB.toFixed(1)} KB` },
         ].map((stat) => (
@@ -59,10 +78,11 @@ export default function VaultsPage() {
         <div className="border border-[#1e1e1e] bg-[#0e0e0e]">
           {/* Table Header */}
           <div className="border-b border-[#1e1e1e] px-6 py-4 flex items-center gap-4 bg-[#050505]">
-            <div className="flex-1 grid grid-cols-5 gap-4">
+            <div className="flex-1 grid grid-cols-6 gap-4">
               <div className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">VAULT NAME</div>
               <div className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">UUID</div>
               <div className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">MEMORIES</div>
+              <div className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">IP ID</div>
               <div className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">CREATED</div>
               <div className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">STATUS</div>
             </div>
@@ -75,18 +95,23 @@ export default function VaultsPage() {
               key={agent.id}
               className="border-b border-[#1e1e1e] px-6 py-4 flex items-center gap-4 hover:bg-[#141414] transition-colors group"
             >
-              <div className="flex-1 grid grid-cols-5 gap-4 items-center">
+              <div className="flex-1 grid grid-cols-6 gap-4 items-center">
                 <div className="font-mono text-sm text-[#f2ede6] group-hover:text-[#00d9ff] transition-colors">
                   {agent.name}
                 </div>
                 <div className="font-mono text-sm text-[#5a5a5a]">{agent.uuid}</div>
                 <div className="font-mono text-sm text-[#5a5a5a]">{agent.memoryCount}</div>
+                <div className="font-mono text-[10px] text-[#3a3a3a] truncate">
+                  {agent.ipId ? `${agent.ipId.slice(0, 8)}...` : '—'}
+                </div>
                 <div className="font-mono text-sm text-[#5a5a5a]">
                   {agent.createdAt.slice(0, 10)}
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-[#22c55e]" />
-                  <span className="font-mono text-[10px] text-[#22c55e] tracking-widest">ACTIVE</span>
+                  <span className={`w-2 h-2 rounded-full ${agent.ipId ? 'bg-[#22c55e]' : 'bg-[#f87171]'}`} />
+                  <span className={`font-mono text-[10px] tracking-widest ${agent.ipId ? 'text-[#22c55e]' : 'text-[#f87171]'}`}>
+                    {agent.ipId ? 'ON-CHAIN' : 'LOCAL'}
+                  </span>
                 </div>
               </div>
               <div className="w-12 flex justify-center">
@@ -101,6 +126,20 @@ export default function VaultsPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* On-Chain Agent IDs */}
+      {onChainIds.length > 0 && (
+        <div className="border border-[#1e1e1e] bg-[#0e0e0e] p-6">
+          <div className="font-mono text-[10px] text-[#3a3a3a] tracking-widest mb-4">ON-CHAIN AGENTS (AGENTVAULT CONTRACT)</div>
+          <div className="flex flex-wrap gap-2">
+            {onChainIds.map((id) => (
+              <div key={id} className="font-mono text-[10px] px-3 py-1.5 border border-[#1e1e1e] text-[#5a5a5a]">
+                Agent #{id} {accessMap[id] ? <span className="text-[#22c55e]">● ACCESS</span> : <span className="text-[#f87171]">● NO ACCESS</span>}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

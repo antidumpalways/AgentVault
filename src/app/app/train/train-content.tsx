@@ -25,10 +25,12 @@ export default function TrainContent() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [input, setInput] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { address, isConnected, connect } = useWallet();
   const { agents, addMemory } = useAppStore();
-  const activeAgent = agents[0];
+
+  const activeAgent = agents.find((a) => a.id === selectedAgentId) || agents[0];
 
   function formatTime() {
     return new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -105,6 +107,17 @@ export default function TrainContent() {
       <div className="flex-[7] flex flex-col border border-[#1e1e1e] bg-[#0e0e0e]">
         <div className="h-12 flex items-center px-5 border-b border-[#1e1e1e] shrink-0">
           <h1 className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">TRAINING SESSION</h1>
+          {agents.length > 0 && (
+            <select
+              value={selectedAgentId || agents[0]?.id}
+              onChange={(e) => setSelectedAgentId(e.target.value)}
+              className="ml-4 bg-[#050505] border border-[#1e1e1e] px-3 py-1 font-mono text-[10px] text-[#f2ede6] focus:border-[#00d9ff] focus:outline-none appearance-none cursor-pointer"
+            >
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </select>
+          )}
           <div className="ml-auto flex items-center gap-2">
             {isConnected ? (
               <div className="flex items-center gap-1.5">
