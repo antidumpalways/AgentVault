@@ -9,7 +9,7 @@ import Link from 'next/link'
 import { isValidAddress } from '@/lib/validate'
 
 export default function VaultsPage() {
-  const { agents, memories, grantedLicenses, loaded, totalSizeKB, addGrantedLicense, removeGrantedLicense } = useAppStore()
+  const { agents, memories, grantedLicenses, loaded, totalSizeKB, addGrantedLicense, removeGrantedLicense, exportJson, exportCsv, triggerDownload } = useAppStore()
   const { address } = useWallet()
   const { grantLicense, isGranting, error: grantError } = useGrantLicense()
   const [onChainIds, setOnChainIds] = useState<number[]>([])
@@ -88,12 +88,41 @@ export default function VaultsPage() {
           <h1 className="font-display text-4xl tracking-tight text-[#f2ede6] mb-2">VAULTS</h1>
           <p className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">MANAGE YOUR ENCRYPTED AGENT MEMORY</p>
         </div>
-        <Link
-          href="/app/spawn"
-          className="font-mono text-[11px] tracking-widest bg-[#00d9ff] text-[#0a0e27] px-5 h-9 flex items-center hover:bg-[#00e6ff] transition-colors font-semibold"
-        >
-          + CREATE VAULT
-        </Link>
+        <div className="flex items-center gap-2">
+          <div className="flex border border-[#1e1e1e]">
+            <button
+              type="button"
+              disabled={memories.length === 0}
+              onClick={() => {
+                const { blob, filename } = exportJson();
+                triggerDownload(blob, filename);
+              }}
+              className="font-mono text-[10px] tracking-widest text-[#f2ede6] px-3 py-2 hover:bg-[#1e1e1e] disabled:opacity-30 disabled:hover:bg-transparent"
+              title="Download full export (agents + memories + granted licenses) as JSON"
+            >
+              EXPORT JSON
+            </button>
+            <div className="w-px bg-[#1e1e1e]" />
+            <button
+              type="button"
+              disabled={memories.length === 0}
+              onClick={() => {
+                const { blob, filename } = exportCsv();
+                triggerDownload(blob, filename);
+              }}
+              className="font-mono text-[10px] tracking-widest text-[#f2ede6] px-3 py-2 hover:bg-[#1e1e1e] disabled:opacity-30 disabled:hover:bg-transparent"
+              title="Download memories as CSV (spreadsheet-friendly)"
+            >
+              CSV
+            </button>
+          </div>
+          <Link
+            href="/app/spawn"
+            className="font-mono text-[11px] tracking-widest bg-[#00d9ff] text-[#0a0e27] px-5 h-9 flex items-center hover:bg-[#00e6ff] transition-colors font-semibold"
+          >
+            + CREATE VAULT
+          </Link>
+        </div>
       </div>
 
       {/* Stats Row */}

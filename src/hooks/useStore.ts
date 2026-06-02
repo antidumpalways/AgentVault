@@ -117,6 +117,59 @@ export function useStore() {
     });
   }, []);
 
+  // Export everything to JSON. Returns a Blob the caller can save via URL.createObjectURL.
+  // The encrypted on-chain UUIDs are preserved so a fresh device can re-decrypt via the
+  // CDR recall flow using a license token granted by the IP owner.
+  const exportJson = useCallback((): { blob: Blob; filename: string } => {
+    const data = loadStore();
+    const payload = {
+      schema: "agentvault-export-v1",
+      exportedAt: new Date().toISOString(),
+      counts: {
+        agents: data.agents.length,
+        memories: data.memories.length,
+        grantedLicenses: data.grantedLicenses.length,
+      },
+      agents: data.agents,
+      memories: data.memories,
+      grantedLicenses: data.grantedLicenses,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const filename = `agentvault-export-${new Date().toISOString().slice(0, 10)}.json`;
+    return { blob, filename };
+  }, []);
+
+  // Export memories to CSV. Useful for spreadsheet analysis / archival.
+  const exportCsv = useCallback((): { blob: Blob; filename: string } => {
+    const data = loadStore();
+    const rows = [
+      ["agentName", "agentId", "role", "content", "uuid", "txHash", "createdAt"].join(","),
+    ];
+    const escape = (v: string) => `"${v.replace(/"/g, '""').replace(/\n/g, " ")}"`;
+    for (const m of data.memories) {
+      rows.push(
+        [m.agentName, m.agentId, m.role, m.content, m.uuid, m.txHash, m.createdAt]
+          .map((v) => escape(String(v ?? "")))
+          .join(",")
+      );
+    }
+    const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+    const filename = `agentvault-memories-${new Date().toISOString().slice(0, 10)}.csv`;
+    return { blob, filename };
+  }, []);
+
+  const triggerDownload = useCallback((blob: Blob, filename: string) => {
+    if (typeof window === "undefined") return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, []);
+
   const getAgentMemories = useCallback(
     (agentId: string) => memories.filter((m) => m.agentId === agentId),
     [memories]
@@ -150,6 +203,9 @@ export function useStore() {
     addGrantedLicense,
     removeGrantedLicense,
     getAgentMemories,
+    exportJson,
+    exportCsv,
+    triggerDownload,
     totalMemories,
     totalAgents,
     totalSizeKB,

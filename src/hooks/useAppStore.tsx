@@ -13,6 +13,9 @@ interface StoreContextType {
   addGrantedLicense: (license: GrantedLicense) => void;
   removeGrantedLicense: (id: string) => void;
   getAgentMemories: (agentId: string) => Memory[];
+  exportJson: () => { blob: Blob; filename: string };
+  exportCsv: () => { blob: Blob; filename: string };
+  triggerDownload: (blob: Blob, filename: string) => void;
   totalMemories: number;
   totalAgents: number;
   totalSizeKB: number;

@@ -28,9 +28,17 @@ export default function TrainContent() {
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { address, isConnected, connect } = useWallet();
-  const { agents, addMemory } = useAppStore();
+  const { agents, memories, getAgentMemories, addMemory } = useAppStore();
 
   const activeAgent = agents.find((a) => a.id === selectedAgentId) || agents[0];
+  // "Memory replay": when an agent is selected, the last 8 stored memories are
+  // injected as LLM context so the conversation continues with continuity.
+  // agentMemories is computed reactively from the store; whenever a new memory
+  // is added (via addMemory below) the next message will include it in context.
+  const agentMemories = activeAgent ? getAgentMemories(activeAgent.id) : [];
+  const replayContext = agentMemories
+    .slice(-8)
+    .map((m) => ({ role: (m.role === "agent" ? "assistant" : "user") as "assistant" | "user", content: m.content }));
 
   function formatTime() {
     return new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -46,7 +54,21 @@ export default function TrainContent() {
   useEffect(() => { if (isConnected) addLog("SYSTEM", "CDR ready."); }, [isConnected, addLog]);
 
   const getAIResponse = async (message: string): Promise<string> => {
-    const res = await fetch("/api/llm/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message, context: { agentName: activeAgent?.name || "Agent", history: messages.slice(-6).map((m) => ({ role: m.role === "agent" ? "assistant" : "user", content: m.content })) } }) });
+    // Merge stored memories (replay) with current session messages.
+    // Stored memories are prepended so the LLM has full prior context.
+    const currentSession = messages.slice(-6).map((m) => ({
+      role: (m.role === "agent" ? "assistant" : "user") as "assistant" | "user",
+      content: m.content,
+    }));
+    const history = [...replayContext, ...currentSession];
+    const res = await fetch("/api/llm/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message,
+        context: { agentName: activeAgent?.name || "Agent", history },
+      }),
+    });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `LLM request failed (${res.status})`);
@@ -62,6 +84,9 @@ export default function TrainContent() {
     setInput("");
     setIsProcessing(true);
     try {
+      if (replayContext.length > 0) {
+        addLog("REPLAY", `Injecting ${replayContext.length} prior memories into LLM context`);
+      }
       addLog("LLM", "Generating response...");
       const aiContent = await getAIResponse(userMsg);
       addLog("CDR", "Encrypting with DKG public key...");
@@ -117,6 +142,14 @@ export default function TrainContent() {
                 <option key={a.id} value={a.id}>{a.name}</option>
               ))}
             </select>
+          )}
+          {replayContext.length > 0 && (
+            <div className="ml-4 flex items-center gap-1.5 border border-[#a78bfa]/30 px-2 py-1">
+              <div className="w-1.5 h-1.5 rounded-full bg-[#a78bfa]" />
+              <span className="font-mono text-[9px] text-[#a78bfa] tracking-widest">
+                REPLAY · {replayContext.length} PRIOR MEMORY{replayContext.length === 1 ? "" : "S"}
+              </span>
+            </div>
           )}
           <div className="ml-auto flex items-center gap-2">
             {isConnected ? (
