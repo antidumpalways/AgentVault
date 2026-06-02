@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isValidAddress } from "@/lib/validate";
 
 const RPC_URL = process.env.RPC_URL || "https://aeneid.storyrpc.io";
-const AGENT_VAULT_ADDRESS = "0x8c13bb7d29feb35ed4adb6f8ab031222b1711641";
+const AGENT_VAULT_ADDRESS = "0x7e0f1182c444ba420a1d98c81c2da05bc4d1b0a8";
 
 const AGENT_VAULT_ABI = [
   {

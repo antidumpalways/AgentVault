@@ -29,6 +29,7 @@ contract AgentVault {
     mapping(uint256 => Memory) public memories;
     mapping(address => uint256[]) public userAgents;
     mapping(uint256 => mapping(address => bool)) public accessGranted;
+    mapping(uint256 => uint256) public agentMemoryCount;
 
     event AgentCreated(
         uint256 indexed agentId,
@@ -85,6 +86,8 @@ contract AgentVault {
             exists: true
         });
 
+        agentMemoryCount[agentId]++;
+
         emit MemoryStored(agentId, memoryId, contentHash);
 
         return memoryId;
@@ -116,13 +119,7 @@ contract AgentVault {
         view
         returns (uint256)
     {
-        uint256 count = 0;
-        for (uint256 i = 0; i < nextMemoryId; i++) {
-            if (memories[i].agentId == agentId && memories[i].exists) {
-                count++;
-            }
-        }
-        return count;
+        return agentMemoryCount[agentId];
     }
 
     function getUserAgents(address user)

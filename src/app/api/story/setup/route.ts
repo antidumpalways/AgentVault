@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     }
 
     const viem = await import("viem");
-    const { createPublicClient, createWalletClient, http, encodeFunctionData, encodeAbiParameters, parseAbi } = viem;
+    const { createPublicClient, createWalletClient, http, encodeFunctionData, encodeAbiParameters } = viem;
     const { privateKeyToAccount } = await import("viem/accounts");
 
     const account = privateKeyToAccount(PRIVATE_KEY as `0x${string}`);
@@ -70,31 +70,47 @@ export async function POST(request: NextRequest) {
       return publicClient.sendRawTransaction({ serializedTransaction: signed });
     };
 
-    const nonce = await publicClient.getTransactionCount({ address: account.address });
+    // Process a transaction step: send → wait → bump nonce
+    const processStep = async (
+      label: string,
+      build: (nonce: number) => { to: `0x${string}`; data: `0x${string}` }
+    ): Promise<{ txHash: `0x${string}`; receipt: any; nextNonce: number }> => {
+      const txHash = await sendTx({ ...build(currentNonce), nonce: currentNonce });
+      console.log(`${label} tx:`, txHash);
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+      if (receipt.status === "reverted") {
+        throw new Error(`${label} tx reverted: ${txHash}`);
+      }
+      return { txHash, receipt, nextNonce: currentNonce + 1 };
+    };
+
+    let currentNonce = await publicClient.getTransactionCount({ address: account.address });
 
     // 1. Mint NFT to deployer (server-side flow — deployer owns IP for license management)
-    const mintData = encodeFunctionData({
-      abi: [{ inputs: [{ internalType: "address", name: "to", type: "address" }], name: "mint", outputs: [{ internalType: "uint256", name: "", type: "uint256" }], stateMutability: "nonpayable", type: "function" }],
-      functionName: "mint",
-      args: [account.address as `0x${string}`],
-    });
-    const mintHash = await sendTx({ to: SIMPLE_NFT as `0x${string}`, data: mintData, nonce });
-    console.log("Mint tx:", mintHash);
-    const mintReceipt = await publicClient.waitForTransactionReceipt({ hash: mintHash });
-    const tokenId = mintReceipt.logs[0] ? BigInt(mintReceipt.logs[0].topics[3] || "0x0") : BigInt(0);
+    const mintStep = await processStep("Mint", (n) => ({
+      to: SIMPLE_NFT as `0x${string}`,
+      data: encodeFunctionData({
+        abi: [{ inputs: [{ internalType: "address", name: "to", type: "address" }], name: "mint", outputs: [{ internalType: "uint256", name: "", type: "uint256" }], stateMutability: "nonpayable", type: "function" }],
+        functionName: "mint",
+        args: [account.address as `0x${string}`],
+      }),
+    }));
+    currentNonce = mintStep.nextNonce;
+    const tokenId = mintStep.receipt.logs[0] ? BigInt(mintStep.receipt.logs[0].topics[3] || "0x0") : BigInt(0);
     console.log("Token ID:", tokenId.toString());
 
     // 2. Register IP Asset
-    const registerData = encodeFunctionData({
-      abi: [{ inputs: [{ internalType: "uint256", name: "chainId", type: "uint256" }, { internalType: "address", name: "tokenContract", type: "address" }, { internalType: "uint256", name: "tokenId", type: "uint256" }], name: "register", outputs: [{ internalType: "address", name: "", type: "address" }], stateMutability: "nonpayable", type: "function" }],
-      functionName: "register",
-      args: [BigInt(chain.id), SIMPLE_NFT as `0x${string}`, tokenId],
-    });
-    const registerHash = await sendTx({ to: IP_ASSET_REGISTRY as `0x${string}`, data: registerData, nonce: nonce + 1 });
-    console.log("Register tx:", registerHash);
-    const registerReceipt = await publicClient.waitForTransactionReceipt({ hash: registerHash });
+    const registerStep = await processStep("Register", (n) => ({
+      to: IP_ASSET_REGISTRY as `0x${string}`,
+      data: encodeFunctionData({
+        abi: [{ inputs: [{ internalType: "uint256", name: "chainId", type: "uint256" }, { internalType: "address", name: "tokenContract", type: "address" }, { internalType: "uint256", name: "tokenId", type: "uint256" }], name: "register", outputs: [{ internalType: "address", name: "", type: "address" }], stateMutability: "nonpayable", type: "function" }],
+        functionName: "register",
+        args: [BigInt(chain.id), SIMPLE_NFT as `0x${string}`, tokenId],
+      }),
+    }));
+    currentNonce = registerStep.nextNonce;
     let ipId = account.address;
-    for (const log of registerReceipt.logs) {
+    for (const log of registerStep.receipt.logs) {
       if (log.address.toLowerCase() === IP_ASSET_REGISTRY.toLowerCase() && log.topics.length >= 2) {
         ipId = ("0x" + log.topics[1]?.slice(26)) as `0x${string}`;
         break;
@@ -104,39 +120,75 @@ export async function POST(request: NextRequest) {
 
     // 3. Attach License Terms
     const licenseTermsId = BigInt(2054);
-    const attachData = encodeFunctionData({
-      abi: [{ inputs: [{ type: "address", name: "ipId" }, { type: "address", name: "licenseTemplate" }, { type: "uint256", name: "licenseTermsId" }], name: "attachLicenseTerms", stateMutability: "nonpayable", type: "function" }],
-      functionName: "attachLicenseTerms",
-      args: [ipId, PIL_TEMPLATE as `0x${string}`, licenseTermsId],
-    });
-    const attachHash = await sendTx({ to: LICENSING_MODULE as `0x${string}`, data: attachData, nonce: nonce + 2 });
-    await publicClient.waitForTransactionReceipt({ hash: attachHash });
+    const attachStep = await processStep("AttachLicense", (n) => ({
+      to: LICENSING_MODULE as `0x${string}`,
+      data: encodeFunctionData({
+        abi: [{ inputs: [{ type: "address", name: "ipId" }, { type: "address", name: "licenseTemplate" }, { type: "uint256", name: "licenseTermsId" }], name: "attachLicenseTerms", stateMutability: "nonpayable", type: "function" }],
+        functionName: "attachLicenseTerms",
+        args: [ipId, PIL_TEMPLATE as `0x${string}`, licenseTermsId],
+      }),
+    }));
+    currentNonce = attachStep.nextNonce;
     console.log("License terms attached");
 
-    // 4. Mint License Tokens
-    const mintLicenseData = encodeFunctionData({
-      abi: [{
-        inputs: [
-          { type: "address", name: "licensorIpId" }, { type: "address", name: "licenseTemplate" },
-          { type: "uint256", name: "licenseTermsId" }, { type: "uint256", name: "amount" },
-          { type: "address", name: "receiver" }, { type: "bytes", name: "royaltyContext" },
-          { type: "uint256", name: "maxMintingFee" }, { type: "uint32", name: "maxRevenueShare" },
-        ],
-        name: "mintLicenseTokens", outputs: [{ type: "uint256" }], stateMutability: "nonpayable", type: "function",
-      }],
-      functionName: "mintLicenseTokens",
-      args: [ipId, PIL_TEMPLATE as `0x${string}`, licenseTermsId, BigInt(1), account.address as `0x${string}`, "0x", BigInt(0), 0],
-    });
-    const mintLicenseHash = await sendTx({ to: LICENSING_MODULE as `0x${string}`, data: mintLicenseData, nonce: nonce + 3 });
-    await publicClient.waitForTransactionReceipt({ hash: mintLicenseHash });
-    console.log("License tokens minted");
+    // 4. Mint License Tokens — parse the actual minted tokenId from Transfer event
+    const mintLicenseStep = await processStep("MintLicense", (n) => ({
+      to: LICENSING_MODULE as `0x${string}`,
+      data: encodeFunctionData({
+        abi: [{
+          inputs: [
+            { type: "address", name: "licensorIpId" }, { type: "address", name: "licenseTemplate" },
+            { type: "uint256", name: "licenseTermsId" }, { type: "uint256", name: "amount" },
+            { type: "address", name: "receiver" }, { type: "bytes", name: "royaltyContext" },
+            { type: "uint256", name: "maxMintingFee" }, { type: "uint32", name: "maxRevenueShare" },
+          ],
+          name: "mintLicenseTokens", outputs: [{ type: "uint256" }], stateMutability: "nonpayable", type: "function",
+        }],
+        functionName: "mintLicenseTokens",
+        args: [ipId, PIL_TEMPLATE as `0x${string}`, licenseTermsId, BigInt(1), account.address as `0x${string}`, "0x", BigInt(0), 0],
+      }),
+    }));
+    currentNonce = mintLicenseStep.nextNonce;
 
-    const totalSupply = await publicClient.readContract({
-      address: LICENSE_TOKEN as `0x${string}`,
-      abi: parseAbi(["function totalSupply() view returns (uint256)"]),
-      functionName: "totalSupply",
-    });
-    const licenseTokenId = totalSupply - BigInt(1);
+    // Parse LicenseToken Transfer event (from=0x0 indicates mint) — scan the block
+    // because mintLicenseTokens mints internally and the Transfer event may not appear
+    // in the tx receipt itself.
+    let licenseTokenId = BigInt(0);
+    try {
+      const mintLogs = await publicClient.getLogs({
+        address: LICENSE_TOKEN as `0x${string}`,
+        event: {
+          type: "event",
+          name: "Transfer",
+          inputs: [
+            { name: "from", type: "address", indexed: true },
+            { name: "to", type: "address", indexed: true },
+            { name: "tokenId", type: "uint256", indexed: true },
+          ],
+        },
+        args: {
+          from: "0x0000000000000000000000000000000000000000" as `0x${string}`,
+        },
+        fromBlock: mintLicenseStep.receipt.blockNumber,
+        toBlock: mintLicenseStep.receipt.blockNumber,
+      } as any);
+      if (mintLogs.length > 0) {
+        // Take the last mint (in case multiple happened in same block)
+        // topic[3] is tokenId (indexed uint256)
+        const lastLog = mintLogs[mintLogs.length - 1];
+        licenseTokenId = BigInt(lastLog.topics[3] || "0x0");
+      }
+    } catch (err) {
+      console.warn("Failed to parse mint event, falling back to totalSupply - 1:", err);
+      // Fallback: read totalSupply
+      const totalSupply = await publicClient.readContract({
+        address: LICENSE_TOKEN as `0x${string}`,
+        abi: [{ name: "totalSupply", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] }],
+        functionName: "totalSupply",
+      });
+      licenseTokenId = totalSupply - BigInt(1);
+    }
+    console.log("License tokens minted, tokenId:", licenseTokenId.toString());
 
     const readConditionData = encodeAbiParameters(
       [{ type: "address" }, { type: "address" }],
@@ -149,10 +201,10 @@ export async function POST(request: NextRequest) {
       licenseTokenId: licenseTokenId.toString(),
       licenseTermsId: licenseTermsId.toString(),
       readConditionData,
-      mintTx: mintHash,
-      registerTx: registerHash,
-      attachTx: attachHash,
-      mintLicenseTx: mintLicenseHash,
+      mintTx: mintStep.txHash,
+      registerTx: registerStep.txHash,
+      attachTx: attachStep.txHash,
+      mintLicenseTx: mintLicenseStep.txHash,
     });
   } catch (error: any) {
     console.error("Story setup error:", error);

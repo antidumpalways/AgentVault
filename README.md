@@ -204,7 +204,7 @@ agentvault/
 | Contract | Address |
 |----------|---------|
 | **SimpleNFT** | `0x6ceb4c8882a74532754363aa8662cc2d0166ff89` |
-| **AgentVault** | `0x8c13bb7d29feb35ed4adb6f8ab031222b1711641` |
+| **AgentVault** | `0x7e0f1182c444ba420a1d98c81c2da05bc4d1b0a8` |
 | OwnerWriteCondition | `0x4C9bFC96d7092b590D497A191826C3dA2277c34B` |
 | LicenseReadCondition | `0xC0640AD4CF2CaA9914C8e5C44234359a9102f7a3` |
 | LicenseToken | `0xFe3838BFb30B34170F00030B52eA4893d8aAC6bC` |
