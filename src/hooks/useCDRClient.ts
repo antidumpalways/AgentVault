@@ -1,5 +1,8 @@
 "use client";
 
+// CDR client wrapper functions. Not a React hook despite the file name —
+// kept for backward compat with imports across the dashboard.
+
 export async function storeEncryptedMemory(
   content: string,
   walletAddress: string,

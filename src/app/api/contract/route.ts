@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isValidAddress } from "@/lib/validate";
 
 const RPC_URL = process.env.RPC_URL || "https://aeneid.storyrpc.io";
 const AGENT_VAULT_ADDRESS = "0x8c13bb7d29feb35ed4adb6f8ab031222b1711641";
@@ -42,6 +43,9 @@ export async function POST(request: NextRequest) {
     switch (action) {
       case "getUserAgents": {
         const { userAddress } = params;
+        if (!isValidAddress(userAddress)) {
+          return NextResponse.json({ error: "Invalid userAddress" }, { status: 400 });
+        }
         const result = await publicClient.readContract({
           address: addr,
           abi: AGENT_VAULT_ABI,
@@ -53,6 +57,9 @@ export async function POST(request: NextRequest) {
 
       case "checkAccess": {
         const { agentId, userAddress } = params;
+        if (!isValidAddress(userAddress)) {
+          return NextResponse.json({ error: "Invalid userAddress" }, { status: 400 });
+        }
         const result = await publicClient.readContract({
           address: addr,
           abi: AGENT_VAULT_ABI,

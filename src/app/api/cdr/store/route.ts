@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimit, getClientIp } from "@/lib/rateLimit";
+import { isValidAddress } from "@/lib/validate";
 
 let wasmInit: Promise<void> | null = null;
 
@@ -12,6 +14,17 @@ export async function POST(request: NextRequest) {
     const { content, walletAddress, readConditionData } = await request.json();
     if (!content || !walletAddress) {
       return NextResponse.json({ error: "Missing content or walletAddress" }, { status: 400 });
+    }
+    if (!isValidAddress(walletAddress)) {
+      return NextResponse.json({ error: "Invalid walletAddress" }, { status: 400 });
+    }
+
+    const rl = rateLimit(`store:${getClientIp(request)}`, 60, 60 * 1000);
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded", resetMs: rl.resetMs },
+        { status: 429 }
+      );
     }
 
     const privateKey = process.env.WALLET_PRIVATE_KEY;

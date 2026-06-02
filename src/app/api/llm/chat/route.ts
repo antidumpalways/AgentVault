@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimit, getClientIp } from "@/lib/rateLimit";
 
 const LLM_API_KEY = process.env.LLM_API_KEY;
 const LLM_API_URL = process.env.LLM_API_URL || "https://api.anthropic.com/v1/messages";
 const LLM_MODEL = process.env.LLM_MODEL || "claude-sonnet-4-20250514";
 
 export async function POST(request: NextRequest) {
+  const rl = rateLimit(`llm:${getClientIp(request)}`, 30, 60 * 1000);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded", resetMs: rl.resetMs },
+      { status: 429 }
+    );
+  }
+
   try {
     const { message, context } = await request.json();
     if (!message) {

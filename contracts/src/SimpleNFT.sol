@@ -13,12 +13,4 @@ contract SimpleNFT is ERC721 {
         _mint(to, tokenId);
         return tokenId;
     }
-
-    function name() public view override returns (string memory) {
-        return "AgentVault IP";
-    }
-
-    function symbol() public view override returns (string memory) {
-        return "AVIP";
-    }
 }
