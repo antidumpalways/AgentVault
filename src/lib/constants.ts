@@ -3,12 +3,17 @@ export const STORY_API_URL = process.env.STORY_API_URL || "https://aeneid.storya
 export const CHAIN_ID = 1315;
 
 // Story Protocol Aeneid testnet faucets.
-// Both require Gitcoin Passport verification — there is no automated API.
-// User must visit one of these in a browser to claim testnet IP.
+// Ordered by reliability for end users (no Gitcoin Passport, no signup, no tweet).
+// 1 IP covers ~10 spawns (each spawn is ~0.1 IP for 4 setup txs).
 export const FAUCET_URLS = {
+  // PRIMARY — paste wallet address, solve Cloudflare Turnstile, get 1 IP.
+  // 24h cooldown per address. No account required.
+  primary: "https://faucet.astrostake.xyz/story-aeneid",
+  // BACKUP — QuickNode. Requires a tweet mentioning the faucet. 12h cooldown.
+  quicknode: "https://faucet.quicknode.com/story/aeneid",
+  // OFFICIAL — Story's own faucet. Cloudflare-protected, Gitcoin Passport
+  // required, often blocks requests from hosted environments. Use as last resort.
   official: "https://aeneid.faucet.story.foundation/",
-  legacy: "https://faucet.story.foundation/",
-  quicknode: "https://faucet.quicknode.com/story/testnet",
 };
 
 export const EXPLORER_URL = "https://aeneid.storyscan.io";

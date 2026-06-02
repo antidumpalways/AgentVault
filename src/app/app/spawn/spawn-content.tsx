@@ -98,8 +98,9 @@ export default function SpawnContent() {
       if (data.success) {
         setDripTxHash(data.txHash);
         showToast(`Sent ${data.amountIp} IP — wait 3s, then RECHECK`, data.txHash, "success");
-        // Auto recheck after a short delay so tx confirms
         setTimeout(() => handleRecheckBalance(), 4000);
+      } else if (res.status === 503 && data.faucets) {
+        showToast("In-app drip offline — use external faucet below", undefined, "error");
       } else {
         showToast(data.error || "Drip failed", undefined, "error");
       }
@@ -235,9 +236,20 @@ export default function SpawnContent() {
                       <button type="button" onClick={handleRecheckBalance} disabled={checkingBalance} className="font-mono text-[10px] tracking-widest border border-[#1e1e1e] text-[#5a5a5a] px-4 py-2 hover:border-[#00d9ff]/50 hover:text-[#f2ede6] transition-colors disabled:opacity-30">
                         {checkingBalance ? "CHECKING..." : "RECHECK"}
                       </button>
-                      <a href={FAUCET_URLS.official} target="_blank" rel="noopener noreferrer" className="font-mono text-[10px] tracking-widest border border-[#1e1e1e] text-[#5a5a5a] px-4 py-2 hover:border-[#f87171]/50 hover:text-[#f2ede6] transition-colors">
-                        EXTERNAL FAUCET
-                      </a>
+                    </div>
+                    <div className="border-t border-[#f87171]/20 pt-3 mt-1 space-y-2">
+                      <p className="font-mono text-[9px] text-[#5a5a5a] tracking-widest">OR — GET TESTNET IP FROM AN EXTERNAL FAUCET:</p>
+                      <div className="flex flex-wrap gap-2">
+                        <a href={FAUCET_URLS.primary} target="_blank" rel="noopener noreferrer" className="font-mono text-[10px] tracking-widest bg-[#00d9ff] text-[#0a0e27] px-4 py-2 hover:bg-[#00e6ff] transition-colors font-semibold">
+                          ASTROSTAKE · 1 IP → {address?.slice(0, 6)}...
+                        </a>
+                        <a href={FAUCET_URLS.quicknode} target="_blank" rel="noopener noreferrer" className="font-mono text-[10px] tracking-widest border border-[#1e1e1e] text-[#5a5a5a] px-4 py-2 hover:border-[#00d9ff]/50 hover:text-[#f2ede6] transition-colors">
+                          QUICKNODE
+                        </a>
+                        <a href={FAUCET_URLS.official} target="_blank" rel="noopener noreferrer" className="font-mono text-[10px] tracking-widest border border-[#1e1e1e] text-[#5a5a5a] px-4 py-2 hover:border-[#00d9ff]/50 hover:text-[#f2ede6] transition-colors">
+                          STORY OFFICIAL
+                        </a>
+                      </div>
                     </div>
                   </div>
                 )}

@@ -64,7 +64,15 @@ export async function POST(request: NextRequest) {
     if (deployerBalance < DRIP_AMOUNT_WEI) {
       console.error("Deployer wallet low on IP:", formatEther(deployerBalance));
       return NextResponse.json(
-        { error: "Server wallet is low on IP. Ask the operator to refill." },
+        {
+          error: "Server wallet is low on IP. Get testnet IP from one of these faucets instead.",
+          deployerBalance: formatEther(deployerBalance),
+          faucets: {
+            primary: "https://faucet.astrostake.xyz/story-aeneid",
+            quicknode: "https://faucet.quicknode.com/story/aeneid",
+            official: "https://aeneid.faucet.story.foundation/",
+          },
+        },
         { status: 503 }
       );
     }
