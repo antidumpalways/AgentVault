@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAppStore } from "@/hooks/useAppStore";
 import { useWallet } from "@/hooks/useWallet";
 import { recallEncryptedMemory, getUserAgentsOnChain, checkAccessOnChain } from "@/hooks/useCDRClient";
@@ -17,6 +17,14 @@ export default function BrainContent() {
 
   const availableUuids = Array.from(new Set(memories.map((m) => m.uuid)));
 
+  // Auto-load on-chain agents when wallet connects (no manual button)
+  useEffect(() => {
+    if (isConnected && address && onChainIds.length === 0) {
+      loadOnChain();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, isConnected]);
+
   const loadOnChain = async () => {
     if (!address) return;
     try {
@@ -30,31 +38,37 @@ export default function BrainContent() {
   };
 
   const handleRecall = async () => {
-    if (!uuid.trim()) return;
+    const trimmed = uuid.trim();
+    if (!trimmed) return;
+    const uuidNum = Number(trimmed);
+    if (!Number.isFinite(uuidNum) || uuidNum <= 0) {
+      showToast("Invalid UUID", undefined, "error");
+      return;
+    }
     setIsRecalling(true);
     setFoundMemories([]);
     try {
       setLogs(["[CDR] Submitting read request..."]);
 
-      const agent = agents.find((a) => a.uuid === uuid.trim());
+      const agent = agents.find((a) => a.uuid === trimmed);
       if (agent?.licenseTokenId && address) {
         try {
           setLogs((p) => [...p, "[CDR] Using license token #" + agent.licenseTokenId + "..."]);
-          const { content } = await recallEncryptedMemory(parseInt(uuid), address, [agent.licenseTokenId]);
+          const { content } = await recallEncryptedMemory(uuidNum, address, [agent.licenseTokenId]);
           setLogs((p) => [...p, "[CDR] ✓ Decrypted from blockchain"]);
-          const found = memories.filter((m) => m.uuid === uuid.trim());
+          const found = memories.filter((m) => m.uuid === trimmed);
           setFoundMemories(found.length > 0 ? found : [{ role: "agent", content, agentName: agent.name, createdAt: new Date().toISOString() }]);
           showToast("Decrypted from blockchain", undefined, "success");
         } catch {
           setLogs((p) => [...p, "[CDR] Blockchain recall failed, reading from local vault..."]);
-          const found = memories.filter((m) => m.uuid === uuid.trim());
+          const found = memories.filter((m) => m.uuid === trimmed);
           setFoundMemories(found);
           showToast(`Decrypted ${found.length} memories (local)`, undefined, "success");
         }
       } else {
         setLogs((p) => [...p, "[CDR] Reading from local vault..."]);
         await new Promise((r) => setTimeout(r, 300));
-        const found = memories.filter((m) => m.uuid === uuid.trim());
+        const found = memories.filter((m) => m.uuid === trimmed);
         setFoundMemories(found);
         if (found.length > 0) {
           setLogs((p) => [...p, `[CDR] ✓ Decrypted ${found.length} memory(ies)`]);
@@ -83,15 +97,6 @@ export default function BrainContent() {
             {loaded ? `${availableUuids.length} LOCAL VAULT(S) · ${onChainIds.length} ON-CHAIN AGENT(S)` : 'LOADING...'}
           </p>
         </div>
-        {isConnected && (
-          <button
-            type="button"
-            onClick={loadOnChain}
-            className="font-mono text-[11px] tracking-widest border border-[#1e1e1e] text-[#5a5a5a] px-4 h-9 hover:border-[#00d9ff]/50 hover:text-[#f2ede6] transition-colors"
-          >
-            LOAD ON-CHAIN
-          </button>
-        )}
       </div>
 
       {/* Recall Form */}

@@ -20,8 +20,8 @@ const VAULT_NAV = [
 
 const BOTTOM_NAV = [
   { name: 'Settings', href: '/app/settings', icon: '⚙️' },
-  { name: 'Docs', href: '#', icon: '📚' },
-  { name: 'Support', href: '#', icon: '🤝' },
+  { name: 'GitHub', href: 'https://github.com/antidumpalways/AgentVault', icon: '📚', external: true },
+  { name: 'Story Docs', href: 'https://docs.story.foundation/', icon: '🤝', external: true },
 ]
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
@@ -103,6 +103,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <a
                 key={item.name}
                 href={item.href}
+                target={item.external ? '_blank' : undefined}
+                rel={item.external ? 'noopener noreferrer' : undefined}
                 className="flex items-center gap-3 px-3 py-2 text-sm font-mono tracking-wider text-[#5a5a5a] hover:text-[#f2ede6] hover:bg-[#0e0e0e] transition-colors"
               >
                 <span className="text-base w-5 text-center">{item.icon}</span>
@@ -110,8 +112,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </a>
             ))}
             <div className="mt-2 px-3 py-2 border border-[#1e1e1e] rounded flex items-center gap-3">
-              <div className="w-6 h-6 rounded-full bg-[#00d9ff]/20 border border-[#00d9ff] flex items-center justify-center text-[10px] text-[#00d9ff]">A</div>
-              {sidebarOpen && <span className="text-xs font-mono text-[#5a5a5a] truncate">agent-001</span>}
+              <div className="w-6 h-6 rounded-full bg-[#00d9ff]/20 border border-[#00d9ff] flex items-center justify-center text-[10px] text-[#00d9ff]">{address ? address.slice(2, 4).toUpperCase() : 'A'}</div>
+              {sidebarOpen && (
+                <span className="text-xs font-mono text-[#5a5a5a] truncate">
+                  {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : 'NOT CONNECTED'}
+                </span>
+              )}
             </div>
           </div>
         </div>
