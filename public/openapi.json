@@ -104,8 +104,8 @@
     "/api/story/setup": {
       "post": {
         "tags": ["Story"],
-        "summary": "Mint NFT, register IP Asset, attach license terms, mint license token",
-        "description": "Runs the full 4-step Story Protocol onboarding for one agent. The NFT is minted to the user's wallet (user owns the IP Asset). All 4 transactions are serialized with a nonce lock to prevent conflicts. Returns the resulting `ipId`, `licenseTokenId`, `readConditionData` blob, and tx hashes for each step.",
+        "summary": "Mint NFT, register IP Asset, attach license terms, mint license token, create AgentVault agent, store memory reference",
+        "description": "Runs the full 6-step Story Protocol + AgentVault onboarding for one agent. The NFT is minted to the user's wallet (user owns the IP Asset). Steps 1-2 + 5-6 (when caller is the deployer) are server-signed; steps 3-4 always require client signing because they go through the user's IP Account. For non-deployer users, steps 5-6 (createAgent + storeMemory on the AgentVault contract) are also client-signed — the user becomes the true on-chain owner of the AgentVault agent. All server-signed transactions are serialized with a nonce lock to prevent conflicts. Returns the resulting `ipId`, `licenseTokenId`, `agentId` (when server-signed), `readConditionData` blob, and tx hashes for each step.",
         "operationId": "storySetup",
         "requestBody": {
           "required": true,
@@ -381,9 +381,11 @@
       },
       "StorySetupRequest": {
         "type": "object",
-        "required": ["walletAddress"],
+        "required": ["walletAddress", "name", "vaultUuid"],
         "properties": {
-          "walletAddress": { "$ref": "#/components/schemas/Address", "description": "Wallet that will own the IP Asset. Must hold IP for gas (check via /api/wallet/balance)." }
+          "walletAddress": { "$ref": "#/components/schemas/Address", "description": "Wallet that will own the IP Asset and the AgentVault agent. Must hold IP for gas (check via /api/wallet/balance)." },
+          "name": { "type": "string", "maxLength": 100, "description": "Agent name. Used as the on-chain identifier in AgentVault.createAgent." },
+          "vaultUuid": { "type": "integer", "minimum": 1, "description": "CDR vault UUID returned by /api/cdr/store. Passed to AgentVault.createAgent and AgentVault.storeMemory." }
         }
       },
       "StorySetupResponse": {
@@ -398,7 +400,35 @@
           "mintTx": { "$ref": "#/components/schemas/TxHash" },
           "registerTx": { "$ref": "#/components/schemas/TxHash" },
           "attachTx": { "$ref": "#/components/schemas/TxHash" },
-          "mintLicenseTx": { "$ref": "#/components/schemas/TxHash" }
+          "mintLicenseTx": { "$ref": "#/components/schemas/TxHash" },
+          "agentId": { "type": "integer", "nullable": true, "description": "On-chain AgentVault agent ID. Set when the caller is the deployer (server-signed). Null for non-deployer users — they sign createAgent client-side and parse the ID from the AgentCreated event." },
+          "agentVaultTx": { "$ref": "#/components/schemas/TxHash", "nullable": true, "description": "createAgent tx hash (server-signed path only)" },
+          "storeMemoryTx": { "$ref": "#/components/schemas/TxHash", "nullable": true, "description": "storeMemory tx hash (server-signed path only)" },
+          "requiresUserSigning": { "type": "boolean", "description": "True if the caller is not the deployer — the client must sign attachLicenseTerms + mintLicenseTokens + createAgent + storeMemory. The licensing pair goes to the IP Account; the AgentVault pair can be batched via EIP-5792 (wallet_sendCalls) if the wallet supports atomic batching." },
+          "pendingUserTxs": {
+            "type": "object", "nullable": true,
+            "description": "Pre-encoded calldata for client-side signing (only when requiresUserSigning=true)",
+            "properties": {
+              "attachLicenseTerms": { "type": "string", "description": "0x-prefixed calldata for LicensingModule.attachLicenseTerms" },
+              "mintLicenseTokens": { "type": "string", "description": "0x-prefixed calldata for LicensingModule.mintLicenseTokens" },
+              "createAgent": { "type": "string", "description": "0x-prefixed calldata for AgentVault.createAgent" },
+              "storeMemory": { "type": "string", "description": "0x-prefixed calldata for AgentVault.storeMemory" },
+              "targets": {
+                "type": "object",
+                "properties": {
+                  "attachLicenseTerms": { "$ref": "#/components/schemas/Address" },
+                  "mintLicenseTokens": { "$ref": "#/components/schemas/Address" },
+                  "createAgent": { "$ref": "#/components/schemas/Address" },
+                  "storeMemory": { "$ref": "#/components/schemas/Address" }
+                }
+              },
+              "licensingModule": { "$ref": "#/components/schemas/Address" },
+              "pilTemplate": { "$ref": "#/components/schemas/Address" },
+              "licenseTermsId": { "type": "string" },
+              "agentVault": { "$ref": "#/components/schemas/Address" },
+              "chainId": { "type": "integer", "example": 1315 }
+            }
+          }
         }
       },
       "LLMChatRequest": {

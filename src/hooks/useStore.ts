@@ -11,6 +11,8 @@ export interface Agent {
   memoryCount: number;
   ipId?: string;
   licenseTokenId?: string;
+  agentId?: number;
+  agentVaultTxHash?: string;
 }
 
 export interface Memory {
@@ -35,27 +37,46 @@ export interface GrantedLicense {
   grantedAt: string;
 }
 
+export interface MarketListing {
+  id: string;
+  title: string;
+  description: string;
+  agentId?: string;
+  agentName: string;
+  ipId: string;
+  priceIp: string;
+  type: "decision" | "insight" | "conversation";
+  createdAt: string;
+  // True when the listing was created by the user (real on-chain IP).
+  // False when the listing is demo/dummy data with a mock IP.
+  isUserListing: boolean;
+  sales: number;
+  rating: number;
+}
+
 interface StoreData {
   agents: Agent[];
   memories: Memory[];
   grantedLicenses: GrantedLicense[];
+  marketListings: MarketListing[];
 }
 
 const STORAGE_KEY = "agentvault_store";
 
 function loadStore(): StoreData {
-  if (typeof window === "undefined") return { agents: [], memories: [], grantedLicenses: [] };
+  if (typeof window === "undefined") return { agents: [], memories: [], grantedLicenses: [], marketListings: [] };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { agents: [], memories: [], grantedLicenses: [] };
+    if (!raw) return { agents: [], memories: [], grantedLicenses: [], marketListings: [] };
     const parsed = JSON.parse(raw);
     return {
       agents: parsed.agents || [],
       memories: parsed.memories || [],
       grantedLicenses: parsed.grantedLicenses || [],
+      marketListings: parsed.marketListings || [],
     };
   } catch {
-    return { agents: [], memories: [], grantedLicenses: [] };
+    return { agents: [], memories: [], grantedLicenses: [], marketListings: [] };
   }
 }
 
@@ -68,6 +89,7 @@ export function useStore() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [grantedLicenses, setGrantedLicenses] = useState<GrantedLicense[]>([]);
+  const [marketListings, setMarketListings] = useState<MarketListing[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -75,13 +97,15 @@ export function useStore() {
     setAgents(data.agents);
     setMemories(data.memories);
     setGrantedLicenses(data.grantedLicenses);
+    setMarketListings(data.marketListings);
     setLoaded(true);
   }, []);
 
   const addAgent = useCallback((agent: Agent) => {
     setAgents((prev) => {
       const next = [...prev, agent];
-      saveStore({ agents: next, memories: loadStore().memories, grantedLicenses: loadStore().grantedLicenses });
+      const data = loadStore();
+      saveStore({ agents: next, memories: data.memories, grantedLicenses: data.grantedLicenses, marketListings: data.marketListings });
       return next;
     });
   }, []);
@@ -89,14 +113,16 @@ export function useStore() {
   const addMemory = useCallback((memory: Memory) => {
     setMemories((prev) => {
       const next = [...prev, memory];
-      saveStore({ agents: loadStore().agents, memories: next, grantedLicenses: loadStore().grantedLicenses });
+      const data = loadStore();
+      saveStore({ agents: data.agents, memories: next, grantedLicenses: data.grantedLicenses, marketListings: data.marketListings });
       return next;
     });
     setAgents((prev) => {
       const next = prev.map((a) =>
         a.id === memory.agentId ? { ...a, memoryCount: a.memoryCount + 1 } : a
       );
-      saveStore({ agents: next, memories: loadStore().memories, grantedLicenses: loadStore().grantedLicenses });
+      const data = loadStore();
+      saveStore({ agents: next, memories: data.memories, grantedLicenses: data.grantedLicenses, marketListings: data.marketListings });
       return next;
     });
   }, []);
@@ -104,7 +130,8 @@ export function useStore() {
   const addGrantedLicense = useCallback((license: GrantedLicense) => {
     setGrantedLicenses((prev) => {
       const next = [...prev, license];
-      saveStore({ agents: loadStore().agents, memories: loadStore().memories, grantedLicenses: next });
+      const data = loadStore();
+      saveStore({ agents: data.agents, memories: data.memories, grantedLicenses: next, marketListings: data.marketListings });
       return next;
     });
   }, []);
@@ -112,7 +139,26 @@ export function useStore() {
   const removeGrantedLicense = useCallback((id: string) => {
     setGrantedLicenses((prev) => {
       const next = prev.filter((l) => l.id !== id);
-      saveStore({ agents: loadStore().agents, memories: loadStore().memories, grantedLicenses: next });
+      const data = loadStore();
+      saveStore({ agents: data.agents, memories: data.memories, grantedLicenses: next, marketListings: data.marketListings });
+      return next;
+    });
+  }, []);
+
+  const addMarketListing = useCallback((listing: MarketListing) => {
+    setMarketListings((prev) => {
+      const next = [listing, ...prev];
+      const data = loadStore();
+      saveStore({ agents: data.agents, memories: data.memories, grantedLicenses: data.grantedLicenses, marketListings: next });
+      return next;
+    });
+  }, []);
+
+  const removeMarketListing = useCallback((id: string) => {
+    setMarketListings((prev) => {
+      const next = prev.filter((l) => l.id !== id);
+      const data = loadStore();
+      saveStore({ agents: data.agents, memories: data.memories, grantedLicenses: data.grantedLicenses, marketListings: next });
       return next;
     });
   }, []);
@@ -197,11 +243,14 @@ export function useStore() {
     agents,
     memories,
     grantedLicenses,
+    marketListings,
     loaded,
     addAgent,
     addMemory,
     addGrantedLicense,
     removeGrantedLicense,
+    addMarketListing,
+    removeMarketListing,
     getAgentMemories,
     exportJson,
     exportCsv,

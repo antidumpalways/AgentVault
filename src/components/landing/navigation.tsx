@@ -54,7 +54,7 @@ export function Navigation() {
           </nav>
           <div className="hidden md:flex items-center gap-4">
             <a href="/app" className="font-mono text-[11px] tracking-widest text-[#5a5a5a] hover:text-[#f2ede6] transition-colors">DASHBOARD</a>
-            <a href="/app" className="font-mono text-[11px] tracking-widest bg-[#00d9ff] text-[#0a0e27] px-5 h-9 flex items-center hover:bg-[#00e6ff] transition-colors font-semibold">GET_STARTED →</a>
+            <a href="/app" className="font-mono text-[11px] tracking-widest bg-[#00d9ff] text-[#0a0e27] px-5 h-9 flex items-center hover:bg-[#00e6ff] transition-colors font-semibold">CONNECT WALLET →</a>
           </div>
           <button onClick={() => setOpen(!open)} className="md:hidden text-[#f2ede6] p-1" aria-label="Toggle menu">
             {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -71,7 +71,7 @@ export function Navigation() {
           ))}
         </div>
         <div className="mt-auto p-8 border-t border-[#1e1e1e]">
-          <a href="/app" onClick={() => setOpen(false)} className="w-full block text-center font-mono text-sm tracking-widest bg-[#00d9ff] text-[#0a0e27] py-5 font-semibold">GET_STARTED →</a>
+          <a href="/app" onClick={() => setOpen(false)} className="w-full block text-center font-mono text-sm tracking-widest bg-[#00d9ff] text-[#0a0e27] py-5 font-semibold">CONNECT WALLET →</a>
         </div>
       </div>
     </>

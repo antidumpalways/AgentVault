@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { useWallet } from "@/hooks/useWallet";
 import { useAppStore } from "@/hooks/useAppStore";
 import { storeEncryptedMemory } from "@/hooks/useCDRClient";
@@ -28,7 +29,7 @@ export default function TrainContent() {
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { address, isConnected, connect } = useWallet();
-  const { agents, memories, getAgentMemories, addMemory } = useAppStore();
+  const { agents, memories, loaded, getAgentMemories, addMemory } = useAppStore();
 
   const activeAgent = agents.find((a) => a.id === selectedAgentId) || agents[0];
   // "Memory replay": when an agent is selected, the last 8 stored memories are
@@ -132,6 +133,14 @@ export default function TrainContent() {
       <div className="flex-[7] flex flex-col border border-[#1e1e1e] bg-[#0e0e0e]">
         <div className="h-12 flex items-center px-5 border-b border-[#1e1e1e] shrink-0">
           <h1 className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">TRAINING SESSION</h1>
+          {loaded && agents.length === 0 && (
+            <Link
+              href="/app/spawn"
+              className="ml-4 font-mono text-[10px] text-[#f59e0b] hover:text-[#fbbf24] tracking-widest"
+            >
+              ⚠ NO AGENTS — SPAWN YOUR FIRST →
+            </Link>
+          )}
           {agents.length > 0 && (
             <select
               value={selectedAgentId || agents[0]?.id}
@@ -158,7 +167,7 @@ export default function TrainContent() {
                 <span className="font-mono text-[9px] text-[#3a3a3a]">CDR ACTIVE</span>
               </div>
             ) : (
-              <button type="button" onClick={connect} className="font-mono text-[10px] text-[#00d9ff] hover:text-[#00e6ff] transition-colors">CONNECT</button>
+              <button type="button" onClick={() => connect('auto')} className="font-mono text-[10px] text-[#00d9ff] hover:text-[#00e6ff] transition-colors">CONNECT</button>
             )}
           </div>
         </div>
@@ -197,13 +206,17 @@ export default function TrainContent() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
-              placeholder={isConnected ? "Type a message..." : "Connect wallet first..."}
+              placeholder={
+                !isConnected ? "Connect wallet first..."
+                  : agents.length === 0 ? "Spawn an agent first..."
+                  : "Type a message..."
+              }
               className="flex-1 bg-[#050505] border border-[#1e1e1e] px-4 py-2.5 font-mono text-sm text-[#f2ede6] placeholder:text-[#3a3a3a] focus:border-[#00d9ff] focus:outline-none transition-colors"
-              disabled={isProcessing || !isConnected}
+              disabled={isProcessing || !isConnected || agents.length === 0}
             />
             <button
               onClick={handleSend}
-              disabled={isProcessing || !input.trim() || !isConnected}
+              disabled={isProcessing || !input.trim() || !isConnected || agents.length === 0}
               className="bg-[#00d9ff] text-[#0a0e27] font-mono text-[11px] tracking-widest px-5 hover:bg-[#00e6ff] transition-colors font-semibold disabled:opacity-30"
             >
               SEND

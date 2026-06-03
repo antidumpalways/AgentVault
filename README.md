@@ -186,7 +186,7 @@ AgentVault is the reference client, not a silo.
 | CDR SDK | @piplabs/cdr-sdk v0.2.1 | Threshold encryption |
 | Blockchain | Story Aeneid Testnet (chainId 1315) | L1 network |
 | Smart Contracts | Solidity 0.8.26, OpenZeppelin | On-chain logic |
-| Wallet | EIP-5749 (Bitget, MetaMask, TokenPocket, Trust) | User authentication |
+| Wallet | EIP-1193 (Bitget, MetaMask) | User authentication |
 | Persistence | localStorage (useStore hook) | Client-side data |
 
 ---
@@ -226,11 +226,15 @@ agentvault/
 │   ├── hooks/
 │   │   ├── useStore.ts              # localStorage-backed store (agents, memories, granted licenses)
 │   │   ├── useAppStore.tsx          # Store context provider
-│   │   ├── useWallet.tsx            # EIP-5749 multi-wallet (Bitget, MetaMask, etc.) + demo fallback
+│   │       ├── useWallet.tsx            # EIP-1193 multi-wallet (Bitget, MetaMask) + demo fallback
 │   │   ├── useCDRClient.ts          # CDR API fetch helpers
 │   │   └── useGrantLicense.ts       # Client-side license minting via user wallet
 │   └── lib/
-│       └── constants.ts             # Contract addresses, RPC URLs
+│       ├── constants.ts             # Contract addresses, RPC URLs, faucet URLs
+│       ├── apiError.ts              # safeError() — hides internals, returns sanitized JSON
+│       ├── csrf.ts                  # Origin-based CSRF check for POST routes
+│       ├── rateLimit.ts             # IP-based rate limiter (in-memory)
+│       └── validate.ts              # isValidAddress(), payload sanitizers
 ├── contracts/
 │   └── src/
 │       ├── AgentVault.sol           # Core agent management
@@ -317,6 +321,7 @@ Full OpenAPI 3.0 spec is served at **`/openapi.json`** and rendered at **`/docs`
 | Wallet | `POST /api/wallet/balance` | Native IP balance + sufficiency check |
 | Wallet | `POST /api/wallet/drip` | Server-side 0.1 IP testnet drip (1h cooldown) |
 | License | `POST /api/license/list-owned` | Enumerate license token IDs held by a wallet |
+| Marketplace | `POST /api/marketplace/purchase` | Pre-encode `mintLicenseTokens` calldata for a buyer to sign (off-chain listing → on-chain license) |
 
 **Client-side license grant** (in `src/hooks/useGrantLicense.ts`): the IP owner signs `LicensingModule.mintLicenseTokens` directly with their wallet. No server-side signer is involved because the IP is owned by the user, not the deployer. The transaction mints an ERC-721 license token to the specified grantee address.
 

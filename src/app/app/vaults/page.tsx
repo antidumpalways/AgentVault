@@ -1,4 +1,5 @@
 'use client'
+/* eslint-disable react/no-unescaped-entities */
 
 import { useAppStore } from '@/hooks/useAppStore'
 import { useWallet } from '@/hooks/useWallet'
@@ -7,9 +8,10 @@ import { useGrantLicense, getLicensesOwnedBy } from '@/hooks/useGrantLicense'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { isValidAddress } from '@/lib/validate'
+import { showToast } from '@/components/Toast'
 
 export default function VaultsPage() {
-  const { agents, memories, grantedLicenses, loaded, totalSizeKB, addGrantedLicense, removeGrantedLicense, exportJson, exportCsv, triggerDownload } = useAppStore()
+  const { agents, memories, grantedLicenses, marketListings, loaded, totalSizeKB, addGrantedLicense, removeGrantedLicense, addMarketListing, exportJson, exportCsv, triggerDownload } = useAppStore()
   const { address } = useWallet()
   const { grantLicense, isGranting, error: grantError } = useGrantLicense()
   const [onChainIds, setOnChainIds] = useState<number[]>([])
@@ -19,6 +21,10 @@ export default function VaultsPage() {
   const [grantedTx, setGrantedTx] = useState<{ tokenId: string; txHash: string; grantee: string } | null>(null)
   const [receivedLicenses, setReceivedLicenses] = useState<string[]>([])
   const [loadingReceived, setLoadingReceived] = useState(false)
+  const [listingAgent, setListingAgent] = useState<string | null>(null)
+  const [listingPrice, setListingPrice] = useState('0.10')
+  const [listingType, setListingType] = useState<'decision' | 'insight' | 'conversation'>('insight')
+  const [listingDescription, setListingDescription] = useState('')
 
   useEffect(() => {
     if (!address) return
@@ -128,8 +134,8 @@ export default function VaultsPage() {
       {/* Stats Row */}
       <div className="grid grid-cols-4 gap-6">
         {[
-          { label: 'LOCAL VAULTS', value: agents.length.toString() },
-          { label: 'ON-CHAIN AGENTS', value: onChainIds.length.toString() },
+          { label: 'LOCAL AGENTS', value: agents.length.toString() },
+          { label: 'AGENTVAULT CONTRACT', value: onChainIds.length.toString() },
           { label: 'TOTAL MEMORIES', value: memories.length.toString() },
           { label: 'STORAGE USED', value: `${totalSizeKB.toFixed(1)} KB` },
         ].map((stat) => (
@@ -163,9 +169,10 @@ export default function VaultsPage() {
         <div className="border border-[#1e1e1e] bg-[#0e0e0e]">
           {/* Table Header */}
           <div className="border-b border-[#1e1e1e] px-6 py-4 flex items-center gap-4 bg-[#050505]">
-            <div className="flex-1 grid grid-cols-6 gap-4">
+            <div className="flex-1 grid grid-cols-7 gap-4">
               <div className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">VAULT NAME</div>
               <div className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">UUID</div>
+              <div className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">AGENT ID</div>
               <div className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">MEMORIES</div>
               <div className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">IP ID</div>
               <div className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">CREATED</div>
@@ -182,11 +189,14 @@ export default function VaultsPage() {
             return (
               <div key={agent.id} className="border-b border-[#1e1e1e] last:border-b-0">
                 <div className="px-6 py-4 flex items-center gap-4 hover:bg-[#141414] transition-colors group">
-                  <div className="flex-1 grid grid-cols-6 gap-4 items-center">
+                  <div className="flex-1 grid grid-cols-7 gap-4 items-center">
                     <div className="font-mono text-sm text-[#f2ede6] group-hover:text-[#00d9ff] transition-colors">
                       {agent.name}
                     </div>
                     <div className="font-mono text-sm text-[#5a5a5a]">{agent.uuid}</div>
+                    <div className="font-mono text-[10px] text-[#5a5a5a]" title="On-chain AgentVault contract ID">
+                      {agent.agentId !== undefined ? `#${agent.agentId}` : <span className="text-[#3a3a3a]">—</span>}
+                    </div>
                     <div className="font-mono text-sm text-[#5a5a5a]">{agent.memoryCount}</div>
                     <div className="font-mono text-[10px] text-[#3a3a3a] truncate">
                       {agent.ipId ? `${agent.ipId.slice(0, 8)}...` : '—'}
@@ -203,19 +213,35 @@ export default function VaultsPage() {
                   </div>
                   <div className="w-32 flex justify-end gap-2">
                     {agent.ipId && (
-                      <button
-                        type="button"
-                        onClick={() => openGrant(agent.id)}
-                        className="font-mono text-[10px] tracking-widest text-[#00d9ff] border border-[#00d9ff]/30 px-2 py-1 hover:bg-[#00d9ff]/10 transition-colors"
-                      >
-                        + LICENSE
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => openGrant(agent.id)}
+                          className="font-mono text-[10px] tracking-widest text-[#00d9ff] border border-[#00d9ff]/30 px-2 py-1 hover:bg-[#00d9ff]/10 transition-colors"
+                        >
+                          + LICENSE
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setListingAgent(agent.id);
+                            setListingPrice('0.10');
+                            setListingType('insight');
+                            setListingDescription(`Access to ${agent.name}'s encrypted memory on Story Protocol.`);
+                          }}
+                          className="font-mono text-[10px] tracking-widest text-[#a78bfa] border border-[#a78bfa]/30 px-2 py-1 hover:bg-[#a78bfa]/10 transition-colors"
+                          title="List this agent on the marketplace"
+                        >
+                          LIST
+                        </button>
+                      </>
                     )}
                     <a
-                      href={`https://aeneid.storyscan.io/tx/${agent.txHash}`}
+                      href={`https://aeneid.storyscan.io/tx/${agent.agentVaultTxHash ?? agent.txHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="font-mono text-[10px] text-[#00d9ff] hover:text-[#00e6ff] flex items-center"
+                      title={agent.agentVaultTxHash ? "View createAgent tx" : "View CDR write tx"}
                     >
                       TX →
                     </a>
@@ -262,6 +288,111 @@ export default function VaultsPage() {
           })}
         </div>
       )}
+
+      {/* List for Sale Modal */}
+      {listingAgent && (() => {
+        const agent = agents.find((a) => a.id === listingAgent);
+        if (!agent?.ipId) return null;
+        return (
+          <div className="fixed inset-0 z-50 bg-[#050505]/90 flex items-center justify-center p-4" onClick={() => setListingAgent(null)}>
+            <div
+              className="border border-[#a78bfa]/40 bg-[#0e0e0e] p-8 max-w-lg w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="font-mono text-[10px] text-[#a78bfa] tracking-widest mb-1">LIST FOR SALE</div>
+              <h2 className="font-display text-2xl text-[#f2ede6] mb-1">{agent.name}</h2>
+              <p className="font-mono text-[10px] text-[#5a5a5a] mb-6">
+                IP {agent.ipId.slice(0, 10)}...{agent.ipId.slice(-8)} · TERMS #2054 (PIL)
+              </p>
+
+              <div className="space-y-3 mb-6">
+                <div>
+                  <label className="font-mono text-[10px] text-[#3a3a3a] tracking-widest block mb-1">PRICE (IP)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={listingPrice}
+                    onChange={(e) => setListingPrice(e.target.value)}
+                    className="w-full bg-[#050505] border border-[#1e1e1e] px-3 py-2 font-mono text-sm text-[#f2ede6] focus:border-[#a78bfa] focus:outline-none"
+                  />
+                  <p className="font-mono text-[9px] text-[#3a3a3a] mt-1">For demo, license is minted with maxMintingFee=0 (free). The price is recorded in the listing for display.</p>
+                </div>
+                <div>
+                  <label className="font-mono text-[10px] text-[#3a3a3a] tracking-widest block mb-1">TYPE</label>
+                  <div className="flex gap-2">
+                    {(['decision', 'insight', 'conversation'] as const).map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setListingType(t)}
+                        className={`font-mono text-[10px] tracking-widest px-3 py-1.5 border transition-colors ${
+                          listingType === t
+                            ? 'bg-[#a78bfa] text-[#0a0e27] border-[#a78bfa]'
+                            : 'border-[#1e1e1e] text-[#5a5a5a] hover:border-[#a78bfa]/50'
+                        }`}
+                      >
+                        {t.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="font-mono text-[10px] text-[#3a3a3a] tracking-widest block mb-1">DESCRIPTION</label>
+                  <textarea
+                    value={listingDescription}
+                    onChange={(e) => setListingDescription(e.target.value)}
+                    rows={3}
+                    className="w-full bg-[#050505] border border-[#1e1e1e] px-3 py-2 font-mono text-sm text-[#f2ede6] focus:border-[#a78bfa] focus:outline-none resize-none"
+                  />
+                </div>
+              </div>
+
+              <div className="border border-[#a78bfa]/30 bg-[#a78bfa]/5 p-3 mb-6">
+                <p className="font-mono text-[10px] text-[#5a5a5a] leading-relaxed">
+                  This will create a marketplace listing pointing to this agent's real IP. Buyers will sign
+                  a <code className="text-[#f2ede6]">mintLicenseTokens</code> tx in their wallet to mint a
+                  non-transferable license token that authorizes them to recall this agent's memories.
+                </p>
+              </div>
+
+              <div className="flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setListingAgent(null)}
+                  className="font-mono text-[10px] tracking-widest text-[#5a5a5a] border border-[#1e1e1e] px-4 py-2 hover:border-[#5a5a5a]"
+                >
+                  CANCEL
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    addMarketListing({
+                      id: `list-${Date.now()}`,
+                      title: agent.name,
+                      description: listingDescription,
+                      agentId: agent.id,
+                      agentName: agent.name,
+                      ipId: agent.ipId!,
+                      priceIp: listingPrice,
+                      type: listingType,
+                      createdAt: new Date().toISOString(),
+                      isUserListing: true,
+                      sales: 0,
+                      rating: 0,
+                    });
+                    setListingAgent(null);
+                    showToast('Listed on marketplace — visit /app/marketplace', undefined, 'success');
+                  }}
+                  className="font-mono text-[10px] tracking-widest bg-[#a78bfa] text-[#0a0e27] px-4 py-2 hover:bg-[#c4b5fd] font-semibold"
+                >
+                  LIST →
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Grant License Modal */}
       {grantingAgent && (() => {

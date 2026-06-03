@@ -23,6 +23,16 @@ export default function ClientLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     let gPressed = false;
     const handler = (e: KeyboardEvent) => {
+      // Skip shortcuts while user is typing in an input/textarea/contenteditable.
+      // Without this, typing "go" or "ga" in a form field triggers navigation.
+      const target = e.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable) return;
+        if (target.closest("input, textarea, [contenteditable='true']")) return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
       if (e.key === "g" || e.key === "G") {
         gPressed = true;
         setTimeout(() => (gPressed = false), 500);

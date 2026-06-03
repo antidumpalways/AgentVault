@@ -19,7 +19,6 @@ const VAULT_NAV = [
 ]
 
 const BOTTOM_NAV = [
-  { name: 'Settings', href: '/app/settings', icon: '⚙️' },
   { name: 'GitHub', href: 'https://github.com/antidumpalways/AgentVault', icon: '📚', external: true },
   { name: 'Story Docs', href: 'https://docs.story.foundation/', icon: '🤝', external: true },
 ]

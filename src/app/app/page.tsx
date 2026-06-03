@@ -77,7 +77,7 @@ export default function AppHome() {
         {!isConnected && (
           <button
             type="button"
-            onClick={connect}
+            onClick={() => connect('auto')}
             disabled={isConnecting}
             className="mt-6 bg-[#00d9ff] text-[#0a0e27] font-mono text-[11px] tracking-widest py-3 px-8 hover:bg-[#00e6ff] transition-colors font-semibold disabled:opacity-30"
           >

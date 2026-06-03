@@ -1,17 +1,20 @@
 "use client";
 
 import { createContext, useContext, ReactNode } from "react";
-import { useStore, Agent, Memory, GrantedLicense } from "@/hooks/useStore";
+import { useStore, Agent, Memory, GrantedLicense, MarketListing } from "@/hooks/useStore";
 
 interface StoreContextType {
   agents: Agent[];
   memories: Memory[];
   grantedLicenses: GrantedLicense[];
+  marketListings: MarketListing[];
   loaded: boolean;
   addAgent: (agent: Agent) => void;
   addMemory: (memory: Memory) => void;
   addGrantedLicense: (license: GrantedLicense) => void;
   removeGrantedLicense: (id: string) => void;
+  addMarketListing: (listing: MarketListing) => void;
+  removeMarketListing: (id: string) => void;
   getAgentMemories: (agentId: string) => Memory[];
   exportJson: () => { blob: Blob; filename: string };
   exportCsv: () => { blob: Blob; filename: string };
