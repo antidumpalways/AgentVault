@@ -34,6 +34,23 @@ User chats with an AI agent. The conversation is encrypted via CDR threshold enc
 
 ---
 
+## Concepts
+
+AgentVault models three on-chain entities, plus a local mirror:
+
+| Entity | Identity | Lives in | Purpose |
+|---|---|---|---|
+| **IP Asset** | `ipId` (address) | Story Protocol `IPAssetRegistry` | The "agent" as intellectual property. Owned by the user's wallet. Transferable, licensable. The IP Account is a CREATE2-deployed proxy. |
+| **CDR Vault** | `vaultId` (uint32) | Story CDR | One encrypted memory entry. Threshold-encrypted via the network's DKG public key. Each chat turn is its own vault. |
+| **Local Manifest** | `agent.id` (uuid string) | `localStorage` (`agentvault_store`) | UI-only index that groups {IP Asset, [CDR Vaults], metadata} into a named "agent". Recoverable via Export/Import JSON. Not source of truth. |
+| **AgentVault** | `agentId` (uint256) + `ipId` → `owner` | `AgentVault.sol` on Aeneid | On-chain agent registry. Maps `owner → [ipId]` so external clients can discover a wallet's agents without trusting localStorage. The user signs `createAgentAndStoreMemory`; the server signs `registerIpForOwner` to add the registry pointer. |
+
+**Why three on-chain entities?** The data itself is on-chain (IP Asset + CDR Vaults). The Local Manifest is just a UI index — replaceable, exportable. Any external client with the IP Asset registry + a license token can discover and recall a user's memories without needing the Manifest.
+
+**Threat model note**: CDR uses a global DKG public key shared across the network. Decryption requires M-of-N validator consensus. This protects data at rest from arbitrary block-explorers — it does **not** prevent validator collusion. Document this when discussing "sovereign memory".
+
+---
+
 ## Architecture
 
 ### System Architecture
@@ -63,9 +80,13 @@ User chats with an AI agent. The conversation is encrypted via CDR threshold enc
 ### Data Flow: Spawn Agent
 
 ```
-User → Enter Name → Story Setup (Mint NFT + Register IP + Attach License)
-     → CDR Store (Allocate Vault + TDH2 Encrypt + Write On-Chain)
-     → Agent saved with UUID, IP ID, License Token ID
+User → Enter Name → Pre-check balance (≥ 0.1 IP from external faucet)
+     → CDR Store (server allocates vault, TDH2 encrypts, writes on-chain)
+     → Story Setup (server returns calldata templates)
+     → User signs 5 txs: mint NFT → register IP → attachLicense (IPAccount.execute)
+                         → mintLicense (IPAccount.execute) → createAgentAndStoreMemory
+     → Server registers on AgentVault (1 tx: registerIpForOwner)
+     → Agent saved to local store with UUID, IP ID, License Token ID, agentId
 ```
 
 ### Data Flow: Train Agent (Chat + Encrypt)
@@ -204,7 +225,7 @@ agentvault/
 │   │   │   ├── story/setup/         # IP Asset + License registration
 │   │   │   ├── contract/            # AgentVault.sol interaction
 │   │   │   ├── license/list-owned/  # Enumerate license tokens held by wallet
-│   │   │   └── wallet/              # balance + server-side IP drip
+│   │   │   └── wallet/              # balance check only (no in-app drip)
 │   │   ├── app/
 │   │   │   ├── spawn/               # Agent creation
 │   │   │   ├── train/               # Chat + CDR encryption
@@ -255,7 +276,7 @@ agentvault/
 | Contract | Address |
 |----------|---------|
 | **SimpleNFT** | `0x6ceb4c8882a74532754363aa8662cc2d0166ff89` |
-| **AgentVault** | `0x7e0f1182c444ba420a1d98c81c2da05bc4d1b0a8` |
+| **AgentVault** | `0xa2adbd7988e1e51218f3df1b64217c313e122ecb` |
 | OwnerWriteCondition | `0x4C9bFC96d7092b590D497A191826C3dA2277c34B` |
 | LicenseReadCondition | `0xC0640AD4CF2CaA9914C8e5C44234359a9102f7a3` |
 | LicenseToken | `0xFe3838BFb30B34170F00030B52eA4893d8aAC6bC` |
@@ -267,14 +288,29 @@ agentvault/
 
 ### AgentVault.sol
 
-Core contract for managing agents and their memories.
+On-chain agent registry + atomic agent/memory creation. Holds the (owner → IP Asset) index so external clients can discover a wallet's agents without trusting localStorage. Deployed at `0xa2adbd7988e1e51218f3df1b64217c313e122ecb` on Aeneid.
 
 ```solidity
-function createAgent(string name, uint256 vaultUuid) external returns (uint256);
-function storeMemory(uint256 agentId, bytes32 contentHash, string metadata) external returns (uint256);
-function grantAccess(uint256 agentId, address grantee) external;
-function revokeAccess(uint256 agentId, address grantee) external;
-function checkAccess(uint256 agentId, address user) external view returns (bool);
+// Atomic: creates the Agent entry AND records the initial memory reference
+// in one tx. Solves the cross-call agentId-resolution problem (avoids
+// agentId=0 in storeMemory when the caller doesn't yet know its agentId).
+function createAgentAndStoreMemory(
+    address ipId,
+    uint256 vaultId,
+    bytes32 contentHash,
+    string calldata metadata
+) external returns (uint256 agentId);
+
+// Registry: anyone can record (owner, ipId, vaultId) so external clients
+// can discover the agent via getUserIpIds(owner). The server calls this
+// after a successful user-signed spawn.
+function registerIpForOwner(address owner, address ipId, uint256 vaultId) external;
+
+// Views
+function getUserIpIds(address user) external view returns (address[] memory);
+function getUserAgents(address user) external view returns (uint256[] memory);
+function getIpInfo(address ipId) external view returns (IpInfo memory);
+function getAgent(uint256 agentId) external view returns (Agent memory);
 ```
 
 ---
@@ -319,7 +355,7 @@ Full OpenAPI 3.0 spec is served at **`/openapi.json`** and rendered at **`/docs`
 | LLM | `POST /api/llm/chat` | Anthropic Claude inference proxy with history |
 | Contract | `POST /api/contract` | Read AgentVault registry (`getUserAgents`, `checkAccess`, `getAgentMemoryCount`) |
 | Wallet | `POST /api/wallet/balance` | Native IP balance + sufficiency check |
-| Wallet | `POST /api/wallet/drip` | Server-side 0.1 IP testnet drip (1h cooldown) |
+| Wallet | `POST /api/wallet/balance` | Native IP balance + sufficiency check (user must fund via external faucet — no in-app drip) |
 | License | `POST /api/license/list-owned` | Enumerate license token IDs held by a wallet |
 | Marketplace | `POST /api/marketplace/purchase` | Pre-encode `mintLicenseTokens` calldata for a buyer to sign (off-chain listing → on-chain license) |
 
@@ -356,7 +392,7 @@ curl -X POST http://localhost:3000/api/cdr/recall \
 - Node.js 18+
 - npm or pnpm
 - MetaMask or compatible wallet
-- IP tokens on Aeneid testnet (get from [faucet](https://faucet.story.foundation/))
+- IP tokens on Aeneid testnet (≥ 0.1 IP per spawn). Get from [Astrostake](https://faucet.astrostake.xyz/story-aeneid) (1 IP, captcha, 24h cooldown) or another public faucet — AgentVault has no in-app drip.
 - Anthropic API key
 
 ### Installation
@@ -379,7 +415,7 @@ cp .env.local.example .env.local
 |----------|----------|---------|
 | `RPC_URL` | yes | Story Aeneid RPC endpoint |
 | `STORY_API_URL` | yes | Story API/indexer endpoint |
-| `WALLET_PRIVATE_KEY` | yes | Server signer for CDR + Story txs (must hold IP on Aeneid) |
+| `WALLET_PRIVATE_KEY` | yes | Server signer for CDR allocate/write + `AgentVault.registerIpForOwner` (the registry pointer). Does NOT sign ownership txs for user-owned agents — those are user-signed. Server only needs ~0.1 IP for the registry call. |
 | `LLM_API_KEY` | no | Anthropic key; without it, chat falls back to a demo reply |
 | `LLM_API_URL` | no | Defaults to Anthropic Messages |
 | `LLM_MODEL` | no | Defaults to `claude-sonnet-4-20250514` |
@@ -429,13 +465,12 @@ See [`docs/TEE_ARCHITECTURE.md`](docs/TEE_ARCHITECTURE.md) for the complete visi
 
 ## Demo
 
-- Spawn an agent → Story IP registration + CDR vault creation
-- Train with real AI (Anthropic Sonnet) → encrypted on-chain
+- Spawn an agent → user signs 5 ownership txs (mint NFT, register IP, attach license, mint license, createAgent+storeMemory atomic). Server only signs the registry pointer. ~0.1 IP per spawn.
+- Train with real AI (Anthropic Sonnet) → encrypted on-chain via CDR
 - Recall memory → threshold decryption via validators
 - Grant a license to another wallet → that address can decrypt your agent's memory
-- Browse vaults, memories, analytics
-
-Submission deadline: June 3, 2026
+- Browse vaults, memories, analytics, marketplace
+- Export / Import JSON → recover local state on a new device
 
 ---
 

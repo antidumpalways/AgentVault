@@ -167,7 +167,11 @@ export default function AppHome() {
               {!balance?.hasSufficientFunds && (
                 <div className="mt-3 p-3 border border-[#f87171]/30 bg-[#f87171]/5">
                   <p className="font-mono text-[10px] text-[#f87171]">
-                    LOW BALANCE — visit /app/spawn to drip testnet IP
+                    LOW BALANCE — get testnet IP from{" "}
+                    <a href="https://faucet.astrostake.xyz/story-aeneid" target="_blank" rel="noopener noreferrer" className="text-[#00d9ff] hover:underline">
+                      Astrostake
+                    </a>{" "}
+                    or another faucet before spawning
                   </p>
                 </div>
               )}

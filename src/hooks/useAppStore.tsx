@@ -17,6 +17,11 @@ interface StoreContextType {
   removeMarketListing: (id: string) => void;
   getAgentMemories: (agentId: string) => Memory[];
   exportJson: () => { blob: Blob; filename: string };
+  importJson: (raw: unknown) => {
+    added: { agents: number; memories: number; grantedLicenses: number };
+    skipped: { agents: number; memories: number; grantedLicenses: number };
+    error?: string;
+  };
   exportCsv: () => { blob: Blob; filename: string };
   triggerDownload: (blob: Blob, filename: string) => void;
   totalMemories: number;

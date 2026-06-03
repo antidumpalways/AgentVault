@@ -1,9 +1,8 @@
 require("dotenv").config({ path: ".env.local" });
 const { createPublicClient, createWalletClient, http } = require("viem");
 const { privateKeyToAccount } = require("viem/accounts");
-const { readFileSync } = require("fs");
+const { readFileSync, existsSync } = require("fs");
 const { join } = require("path");
-const solc = require("solc");
 
 async function main() {
   const RPC_URL = process.env.RPC_URL || "https://aeneid.storyrpc.io";
@@ -27,63 +26,34 @@ async function main() {
   console.log("Deploying AgentVault to Aeneid (chainId 1315) ...");
   console.log("Deployer:", account.address);
 
-  // Read + compile AgentVault.sol
-  const sourcePath = join(__dirname, "..", "contracts", "src", "AgentVault.sol");
-  const source = readFileSync(sourcePath, "utf8");
-
-  const input = {
-    language: "Solidity",
-    sources: { "AgentVault.sol": { content: source } },
-    settings: {
-      evmVersion: "cancun",
-      outputSelection: { "*": { "*": ["abi", "evm.bytecode"] } },
-    },
-  };
-
-  function findImports(path) {
-    try {
-      return { contents: readFileSync(join(__dirname, "..", "node_modules", path), "utf8") };
-    } catch {
-      return { error: "File not found: " + path };
-    }
+  // Check deployer balance
+  const balance = await publicClient.getBalance({ address: account.address });
+  console.log("Deployer balance:", (Number(balance) / 1e18).toFixed(4), "IP");
+  if (balance < BigInt(1e16)) { // 0.01 IP
+    throw new Error("Deployer balance too low. Drip from external faucet first.");
   }
 
-  console.log("Compiling AgentVault.sol ...");
-  const output = JSON.parse(
-    solc.compile(JSON.stringify(input), { import: findImports })
-  );
-
-  if (output.errors) {
-    const fatal = output.errors.filter((e) => e.severity === "error");
-    if (fatal.length > 0) {
-      console.error("Compile errors:");
-      fatal.forEach((e) => console.error(e.formattedMessage));
-      throw new Error("Compilation failed");
-    }
+  // Read the hardhat-compiled artifact
+  const artifactPath = join(__dirname, "..", "artifacts", "contracts", "src", "AgentVault.sol", "AgentVault.json");
+  if (!existsSync(artifactPath)) {
+    throw new Error(`Artifact not found at ${artifactPath}. Run 'hardhat compile' first.`);
   }
-
-  const abi = output.contracts["AgentVault.sol"].AgentVault.abi;
-  const bytecode = output.contracts["AgentVault.sol"].AgentVault.evm.bytecode.object;
+  const artifact = JSON.parse(readFileSync(artifactPath, "utf8"));
+  const bytecode = artifact.bytecode;
 
   // Deploy
   const nonce = await publicClient.getTransactionCount({ address: account.address });
   const gasPrice = await publicClient.getGasPrice();
 
   console.log("Sending deploy tx (nonce", nonce, ") ...");
-  const signed = await walletClient.signTransaction({
-    account,
-    to: undefined,
-    data: "0x" + bytecode,
-    value: BigInt(0),
-    gas: BigInt(2000000),
-    gasPrice,
-    nonce,
-    chainId: chain.id,
+  const hash = await walletClient.deployContract({
+    abi: artifact.abi,
+    bytecode,
+    args: [],
   });
-  const txHash = await publicClient.sendRawTransaction({ serializedTransaction: signed });
-  console.log("Deploy tx:", txHash);
+  console.log("Deploy tx:", hash);
 
-  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash });
   const address = receipt.contractAddress;
 
   if (!address) {
@@ -101,15 +71,16 @@ async function main() {
   console.log("AgentVault:     ", address);
   console.log("Code size:      ", (code.length - 2) / 2, "bytes");
   console.log("Deployer:       ", account.address);
-  console.log("Tx:             ", txHash);
+  console.log("Tx:             ", hash);
   console.log("Block:          ", receipt.blockNumber);
-  console.log("\nUpdate src/app/api/contract/route.ts:");
-  console.log(`  const AGENT_VAULT_ADDRESS = "${address}";`);
+  console.log("\nUpdate src/lib/constants.ts → CONTRACTS.AGENT_VAULT with:");
+  console.log(`  AGENT_VAULT: "${address}",`);
+  console.log("=========================\n");
 }
 
 main()
   .then(() => process.exit(0))
   .catch((error) => {
-    console.error("Deployment failed:", error);
+    console.error("Deployment failed:", error.message || error);
     process.exit(1);
   });

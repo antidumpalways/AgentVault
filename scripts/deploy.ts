@@ -1,4 +1,4 @@
-import { createWalletClient, http, parseAbi } from "viem";
+import { createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -42,9 +42,6 @@ async function main() {
   const agentVaultArtifact = JSON.parse(
     readFileSync(join(__dirname, "../artifacts/contracts/src/AgentVault.sol/AgentVault.json"), "utf8")
   );
-  const timeBasedArtifact = JSON.parse(
-    readFileSync(join(__dirname, "../artifacts/contracts/src/TimeBasedReadCondition.sol/TimeBasedReadCondition.json"), "utf8")
-  );
 
   console.log("\nDeploying AgentVault...");
   const agentVaultHash = await client.deployContract({
@@ -56,19 +53,9 @@ async function main() {
   const agentVaultAddress = await getContractAddress(agentVaultHash);
   console.log("AgentVault address:", agentVaultAddress);
 
-  console.log("\nDeploying TimeBasedReadCondition...");
-  const timeBasedHash = await client.deployContract({
-    abi: timeBasedArtifact.abi,
-    bytecode: timeBasedArtifact.bytecode as `0x${string}`,
-  });
-  console.log("TimeBasedReadCondition tx:", timeBasedHash);
-
-  const timeBasedAddress = await getContractAddress(timeBasedHash);
-  console.log("TimeBasedReadCondition address:", timeBasedAddress);
-
   console.log("\n=== Deployment Summary ===");
   console.log("AgentVault:", agentVaultAddress);
-  console.log("TimeBasedReadCondition:", timeBasedAddress);
+  console.log("Update src/lib/constants.ts → CONTRACTS.AGENT_VAULT with the new address.");
   console.log("Explorer: https://aeneid.storyscan.io/");
   console.log("========================\n");
 }

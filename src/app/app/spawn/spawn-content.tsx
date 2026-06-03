@@ -5,22 +5,18 @@ import { useWallet } from "@/hooks/useWallet";
 import { useAppStore } from "@/hooks/useAppStore";
 import { storeEncryptedMemory } from "@/hooks/useCDRClient";
 import { showToast } from "@/components/Toast";
-import { FAUCET_URLS, EXPLORER_URL } from "@/lib/constants";
+import {
+  FAUCET_URLS,
+  EXPLORER_URL,
+  RPC_URL,
+  CHAIN_ID,
+} from "@/lib/constants";
 
 interface CreatedAgent {
   name: string;
   uuid: string;
   txHash: string;
   createdAt: string;
-  ipId?: string;
-  licenseTokenId?: string;
-  agentId?: number;
-  agentVaultTxHash?: string;
-  storeMemoryTxHash?: string;
-  storyMintTx?: string;
-  storyRegisterTx?: string;
-  storyAttachTx?: string;
-  storyMintLicenseTx?: string;
 }
 
 const steps = [
@@ -28,6 +24,8 @@ const steps = [
   { id: 1, label: "STORY PROTOCOL" },
   { id: 2, label: "CDR ENCRYPT" },
 ];
+
+const MIN_BALANCE_FOR_SPAWN_IP = "0.1";
 
 export default function SpawnContent() {
   const [agentName, setAgentName] = useState("");
@@ -37,13 +35,13 @@ export default function SpawnContent() {
   const [logs, setLogs] = useState<string[]>([]);
   const [balance, setBalance] = useState<{ balanceIp: string; hasSufficientFunds: boolean; requiredIp: string } | null>(null);
   const [checkingBalance, setCheckingBalance] = useState(false);
-  const [dripping, setDripping] = useState(false);
-  const [dripTxHash, setDripTxHash] = useState<string | null>(null);
   const { address, isConnected, connect } = useWallet();
   const { addAgent } = useAppStore();
 
-  // Check user's IP balance when wallet connects. They need ~0.05 IP to cover
-  // 4 on-chain txs (mint, register, attachLicense, mintLicense).
+  // Check user's IP balance when wallet connects. User needs ~0.1 IP to cover
+  // 5 user-signed txs (mint NFT, register IP, attach license, mint license,
+  // createAgentAndStoreMemory). The deployer wallet no longer pays for
+  // user-owned spawns.
   useEffect(() => {
     if (!address) {
       setBalance(null);
@@ -93,33 +91,6 @@ export default function SpawnContent() {
     }
   };
 
-  const handleDrip = async () => {
-    if (!address || dripping) return;
-    setDripping(true);
-    setDripTxHash(null);
-    try {
-      const res = await fetch("/api/wallet/drip", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: address }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setDripTxHash(data.txHash);
-        showToast(`Sent ${data.amountIp} IP — wait 3s, then RECHECK`, data.txHash, "success");
-        setTimeout(() => handleRecheckBalance(), 4000);
-      } else if (res.status === 503 && data.faucets) {
-        showToast("In-app drip offline — use external faucet below", undefined, "error");
-      } else {
-        showToast(data.error || "Drip failed", undefined, "error");
-      }
-    } catch (e) {
-      showToast("Drip request failed", undefined, "error");
-    } finally {
-      setDripping(false);
-    }
-  };
-
   const stepStatus = (i: number) => {
     if (isConnected && i === 0) return "done";
     if (step > i) return "done";
@@ -130,19 +101,26 @@ export default function SpawnContent() {
   const handleSpawn = async () => {
     if (!agentName.trim() || !address) return;
     if (balance && !balance.hasSufficientFunds) {
-      showToast("Insufficient IP balance. Get testnet IP from faucet first.", undefined, "error");
+      showToast(`Need at least ${MIN_BALANCE_FOR_SPAWN_IP} IP — get from a faucet first.`, undefined, "error");
       return;
     }
     setIsCreating(true);
     setLogs([]);
     try {
+      // === STEP 1: Allocate CDR vault (server signs, server pays) ===
       setStep(1);
-      setLogs(["[CDR] Initializing threshold encryption..."]);
+      setLogs((p) => [...p, "[CDR] Allocating threshold-encrypted vault..."]);
       const initialMemory = `I am ${agentName}, created on ${new Date().toISOString()}.`;
-      const { uuid, txHash } = await storeEncryptedMemory(initialMemory, address);
-      setLogs((p) => [...p, `[CDR] Vault UUID: ${uuid}`, `[CDR] File: agent-${uuid}.md`, `[CDR] Tx: ${txHash.slice(0, 14)}...`]);
+      const { uuid, txHash: cdrStoreTxHash } = await storeEncryptedMemory(initialMemory, address);
+      setLogs((p) => [
+        ...p,
+        `[CDR] Vault ID: ${uuid}`,
+        `[CDR] File: agent-${uuid}.md`,
+        `[CDR] Tx: ${cdrStoreTxHash.slice(0, 14)}...`,
+      ]);
 
-      setLogs((p) => [...p, "[STORY] Registering IP Asset on Story Protocol..."]);
+      // === STEP 2: User signs 5 ownership-establishing txs ===
+      setLogs((p) => [...p, "[STORY] Fetching calldata templates..."]);
       const storyRes = await fetch("/api/story/setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -150,244 +128,264 @@ export default function SpawnContent() {
       });
       const storyData = await storyRes.json();
       if (!storyData.success) throw new Error(storyData.error || "Story setup failed");
-      setLogs((p) => [...p, `[STORY] IP: ${storyData.ipId?.slice(0, 14)}...`]);
 
-      // If user is not the deployer, sign the licensing + AgentVault txs client-side.
-      // Group 1: Licensing txs (to IP Account — sequential, must go through IP Account proxy)
-      // Group 2: createAgent + storeMemory (to AgentVault — batched via EIP-5792 if supported)
-      let licenseTokenId = storyData.licenseTokenId;
-      let agentId: number | null = storyData.agentId;
-      let agentVaultTxHash: string | null = storyData.agentVaultTx;
-      let storeMemoryTxHash: string | null = storyData.storeMemoryTx;
-      if (storyData.requiresUserSigning && storyData.pendingUserTxs) {
-        setLogs((p) => [...p, "[WALLET] 2 prompts ahead: licensing (2 txs) + AgentVault (1-2 txs)..."]);
-        const provider = (window as unknown as { ethereum?: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum;
-        if (!provider) throw new Error("No wallet detected");
-        const { createWalletClient, custom, createPublicClient, http, decodeEventLog } = await import("viem");
-        const { defineChain } = await import("viem");
-        const aeneid = defineChain({ id: 1315, name: "Aeneid", network: "aeneid",
-          nativeCurrency: { name: "IP", symbol: "IP", decimals: 18 },
-          rpcUrls: { default: { http: ["https://aeneid.storyrpc.io"] } } });
-        const wClient = createWalletClient({ transport: custom(provider as never), chain: aeneid });
-        const pub = createPublicClient({ chain: aeneid, transport: http() });
-        const [account] = await wClient.requestAddresses();
-        if (!account) throw new Error("Wallet returned no account");
+      const provider = (window as unknown as { ethereum?: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum;
+      if (!provider) throw new Error("No wallet detected");
+      const { createWalletClient, custom, createPublicClient, http, encodeFunctionData } = await import("viem");
+      const aeneid = {
+        id: CHAIN_ID, name: "Aeneid" as const, network: "aeneid" as const,
+        nativeCurrency: { name: "IP", symbol: "IP", decimals: 18 },
+        rpcUrls: { default: { http: [RPC_URL] } },
+      };
+      const wClient = createWalletClient({ transport: custom(provider as never), chain: aeneid });
+      const pub = createPublicClient({ chain: aeneid, transport: http() });
+      const [account] = await wClient.requestAddresses();
+      if (!account) throw new Error("Wallet returned no account");
 
-        // Verify chain is 1315 before signing — user may have switched chains
-        // away from Aeneid after the initial connect() check. If not, force switch.
-        const currentChainIdHex = await provider.request({ method: "eth_chainId" }) as string;
-        const currentChainId = parseInt(currentChainIdHex, 16);
-        if (currentChainId !== 1315) {
-          setLogs((p) => [...p, `[WALLET] On chain ${currentChainId} — switching to Aeneid (1315)...`]);
-          try {
+      // Verify chain is 1315
+      const chainIdHex = await provider.request({ method: "eth_chainId" }) as string;
+      if (parseInt(chainIdHex, 16) !== CHAIN_ID) {
+        try {
+          await provider.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: "0x523" }],
+          });
+        } catch (switchErr: unknown) {
+          const code = (switchErr as { code?: number })?.code;
+          if (code === 4902) {
             await provider.request({
-              method: "wallet_switchEthereumChain",
-              params: [{ chainId: "0x523" }],
-            });
-            const after = await provider.request({ method: "eth_chainId" }) as string;
-            if (parseInt(after, 16) !== 1315) {
-              throw new Error(`Chain switch did not take effect (still on ${after})`);
-            }
-            setLogs((p) => [...p, "[WALLET] Switched to Aeneid"]);
-          } catch (switchErr: unknown) {
-            const code = (switchErr as { code?: number })?.code;
-            if (code === 4902) {
-              await provider.request({
-                method: "wallet_addEthereumChain",
-                params: [{
-                  chainId: "0x523", chainName: "Aeneid",
-                  nativeCurrency: { name: "IP", symbol: "IP", decimals: 18 },
-                  rpcUrls: ["https://aeneid.storyrpc.io"],
-                  blockExplorerUrls: ["https://aeneid.storyscan.io"],
-                }],
-              });
-            } else {
-              throw new Error(`Please switch your wallet to Aeneid testnet (chain 1315). Error: ${(switchErr as Error)?.message || switchErr}`);
-            }
-          }
-        }
-
-        // === PROMPT 1 of 2: Licensing txs (sequential, must go to IP Account) ===
-        setLogs((p) => [...p, "[LICENSING] Sign 2 licensing txs..."]);
-        const attachHash = await wClient.sendTransaction({
-          account, chain: aeneid,
-          to: storyData.pendingUserTxs.targets.attachLicenseTerms as `0x${string}`,
-          data: storyData.pendingUserTxs.attachLicenseTerms as `0x${string}`,
-          value: BigInt(0),
-        });
-        setLogs((p) => [...p, `[LICENSING] Attach: ${attachHash.slice(0, 14)}...`]);
-
-        const mintLicenseHash = await wClient.sendTransaction({
-          account, chain: aeneid,
-          to: storyData.pendingUserTxs.targets.mintLicenseTokens as `0x${string}`,
-          data: storyData.pendingUserTxs.mintLicenseTokens as `0x${string}`,
-          value: BigInt(0),
-        });
-        setLogs((p) => [...p, `[LICENSING] MintLicense: ${mintLicenseHash.slice(0, 14)}...`]);
-
-        // Look up canonical licenseTokenId
-        try {
-          const canonical = await pub.readContract({
-            address: storyData.pendingUserTxs.licensingModule as `0x${string}`,
-            abi: [{ name: "getLicenseTokenId", type: "function", stateMutability: "view",
-                    inputs: [{ type: "address", name: "ipId" }, { type: "address", name: "licenseTemplate" }, { type: "uint256", name: "licenseTermsId" }],
-                    outputs: [{ type: "uint256" }] }],
-            functionName: "getLicenseTokenId",
-            args: [storyData.ipId as `0x${string}`,
-                   storyData.pendingUserTxs.pilTemplate as `0x${string}`,
-                   BigInt(storyData.pendingUserTxs.licenseTermsId)],
-          }) as bigint;
-          if (canonical > BigInt(0)) {
-            licenseTokenId = canonical.toString();
-            setLogs((p) => [...p, `[LICENSING] Canonical tokenId: #${licenseTokenId}`]);
-          }
-        } catch (e) {
-          console.warn("getLicenseTokenId lookup failed", e);
-        }
-
-        // === PROMPT 2 of 2: AgentVault txs (createAgent + storeMemory) ===
-        // Try EIP-5792 wallet_sendCalls for a single batched prompt. If the wallet
-        // doesn't support it, fall back to 2 sequential prompts.
-        const calls = [
-          { to: storyData.pendingUserTxs.targets.createAgent as `0x${string}`,
-            data: storyData.pendingUserTxs.createAgent as `0x${string}`, value: "0x0" },
-          { to: storyData.pendingUserTxs.targets.storeMemory as `0x${string}`,
-            data: storyData.pendingUserTxs.storeMemory as `0x${string}`, value: "0x0" },
-        ];
-        const agentVaultAddr = storyData.pendingUserTxs.targets.createAgent as `0x${string}`;
-
-        let batchId: string | undefined;
-        let usedBatch = false;
-        try {
-          const caps = await provider.request({
-            method: "wallet_getCapabilities",
-            params: [account],
-          }) as Record<string, { atomicBatch?: { supported: boolean } }> | undefined;
-          const supported = !!caps?.["0x523"]?.atomicBatch?.supported;
-          if (supported) {
-            batchId = await provider.request({
-              method: "wallet_sendCalls",
+              method: "wallet_addEthereumChain",
               params: [{
-                version: "1.0",
                 chainId: "0x523",
-                from: account,
-                calls,
+                chainName: "Aeneid",
+                nativeCurrency: { name: "IP", symbol: "IP", decimals: 18 },
+                rpcUrls: [RPC_URL],
+                blockExplorerUrls: [EXPLORER_URL],
               }],
-            }) as string;
-            usedBatch = true;
-            setLogs((p) => [...p, "[AGENTVAULT] Batch sent via EIP-5792 — wait for receipts..."]);
-            // Wait for the batch to land. wallet_getCallsStatus returns 'success' when all confirmed.
-            const deadline = Date.now() + 120_000;
-            while (Date.now() < deadline) {
-              const status = await provider.request({
-                method: "wallet_getCallsStatus",
-                params: [batchId],
-              }) as { status: number | string; receipts?: Array<{ transactionHash: string }> };
-              const code = typeof status.status === "string" ? parseInt(status.status as string, 16) : status.status;
-              if (code === 200) {
-                const hashes = (status.receipts ?? []).map((r) => r.transactionHash);
-                if (hashes[0]) {
-                  agentVaultTxHash = hashes[0];
-                  setLogs((p) => [...p, `[AGENTVAULT] createAgent: ${hashes[0].slice(0, 14)}...`]);
-                }
-                if (hashes[1]) {
-                  storeMemoryTxHash = hashes[1];
-                  setLogs((p) => [...p, `[AGENTVAULT] storeMemory: ${hashes[1].slice(0, 14)}...`]);
-                }
-                break;
-              }
-              if (code >= 400) throw new Error(`EIP-5792 batch failed (status ${code})`);
-              await new Promise((r) => setTimeout(r, 1500));
-            }
+            });
+          } else {
+            throw new Error(`Please switch to Aeneid testnet (chain ${CHAIN_ID}).`);
           }
-        } catch (batchErr) {
-          console.warn("EIP-5792 batch unavailable, falling back to sequential:", batchErr);
-          usedBatch = false;
-        }
-
-        if (!usedBatch) {
-          // Fallback: 2 sequential prompts for createAgent + storeMemory
-          setLogs((p) => [...p, "[AGENTVAULT] Sign 2 AgentVault txs (EIP-5792 not supported)..."]);
-          const createHash = await wClient.sendTransaction({
-            account, chain: aeneid,
-            to: agentVaultAddr,
-            data: storyData.pendingUserTxs.createAgent as `0x${string}`,
-            value: BigInt(0),
-          });
-          agentVaultTxHash = createHash;
-          setLogs((p) => [...p, `[AGENTVAULT] createAgent: ${createHash.slice(0, 14)}...`]);
-
-          const storeHash = await wClient.sendTransaction({
-            account, chain: aeneid,
-            to: storyData.pendingUserTxs.targets.storeMemory as `0x${string}`,
-            data: storyData.pendingUserTxs.storeMemory as `0x${string}`,
-            value: BigInt(0),
-          });
-          storeMemoryTxHash = storeHash;
-          setLogs((p) => [...p, `[AGENTVAULT] storeMemory: ${storeHash.slice(0, 14)}...`]);
-        }
-
-        // Parse agentId from AgentCreated event in the createAgent receipt
-        try {
-          const txHash = agentVaultTxHash;
-          if (txHash) {
-            const receipt = await pub.waitForTransactionReceipt({ hash: txHash as `0x${string}` });
-            const agentVaultAddress = storyData.pendingUserTxs.agentVault as `0x${string}`;
-            for (const log of receipt.logs) {
-              if (log.address.toLowerCase() !== agentVaultAddress.toLowerCase()) continue;
-              try {
-                const decoded = decodeEventLog({
-                  abi: [{
-                    name: "AgentCreated", type: "event",
-                    inputs: [
-                      { name: "agentId", type: "uint256", indexed: true },
-                      { name: "owner", type: "address", indexed: true },
-                      { name: "vaultUuid", type: "uint256", indexed: false },
-                    ],
-                  }],
-                  data: log.data,
-                  topics: log.topics,
-                });
-                if (decoded.eventName === "AgentCreated") {
-                  const args = decoded.args as { agentId: bigint; owner: string };
-                  agentId = Number(args.agentId);
-                  setLogs((p) => [...p, `[AGENTVAULT] Agent #${agentId} created`]);
-                  break;
-                }
-              } catch {
-                continue;
-              }
-            }
-          }
-        } catch (e) {
-          console.warn("agentId parse from receipt failed", e);
         }
       }
 
+      setLogs((p) => [...p, "[WALLET] 5 prompts ahead: NFT mint, IP register, attach license, mint license, register agent..."]);
+
+      // --- Tx 1: mint NFT to user ---
+      const mintData = encodeFunctionData({
+        abi: storyData.mintTx.abi,
+        functionName: storyData.mintTx.functionName,
+        args: storyData.mintTx.args,
+      });
+      const mintTxHash = await wClient.sendTransaction({
+        account, chain: aeneid,
+        to: storyData.mintTx.to as `0x${string}`,
+        data: mintData,
+        value: BigInt(0),
+      });
+      const mintReceipt = await pub.waitForTransactionReceipt({ hash: mintTxHash });
+      setLogs((p) => [...p, `[STORY] Mint NFT: ${mintTxHash.slice(0, 14)}...`]);
+
+      // Parse tokenId from the SimpleNFT.mint event log
+      let tokenId = BigInt(0);
+      for (const log of mintReceipt.logs) {
+        // SimpleNFT emits Transfer(address,address,uint256). topic[3] is the tokenId.
+        if (log.topics.length >= 4 && log.topics[3]) {
+          try {
+            tokenId = BigInt(log.topics[3]);
+            break;
+          } catch { /* not a tokenId topic */ }
+        }
+      }
+      if (tokenId === BigInt(0)) throw new Error("Could not parse tokenId from mint receipt");
+      setLogs((p) => [...p, `[STORY] Token ID: #${tokenId.toString()}`]);
+
+      // --- Tx 2: register IP Asset ---
+      const registerData = encodeFunctionData({
+        abi: storyData.registerTx.abi,
+        functionName: storyData.registerTx.functionName,
+        args: [
+          storyData.registerTx.args[0], // chainId
+          storyData.registerTx.args[1], // tokenContract
+          tokenId,                       // from mint
+        ],
+      });
+      const registerTxHash = await wClient.sendTransaction({
+        account, chain: aeneid,
+        to: storyData.registerTx.to as `0x${string}`,
+        data: registerData,
+        value: BigInt(0),
+      });
+      const registerReceipt = await pub.waitForTransactionReceipt({ hash: registerTxHash });
+      setLogs((p) => [...p, `[STORY] Register IP: ${registerTxHash.slice(0, 14)}...`]);
+
+      // Parse IP Account address (ipId) from the register event log
+      let ipId: `0x${string}` | null = null;
+      for (const log of registerReceipt.logs) {
+        // IPRegistered event has ipId in topics[1]
+        if (log.topics.length >= 2 && log.topics[1] && log.topics[1].length === 66) {
+          const candidate = ("0x" + log.topics[1].slice(26)) as `0x${string}`;
+          // sanity: should be non-zero, not the deployer, not a contract addr
+          if (candidate !== "0x0000000000000000000000000000000000000000") {
+            ipId = candidate;
+            break;
+          }
+        }
+      }
+      if (!ipId) throw new Error("Could not parse ipId from register receipt");
+      setLogs((p) => [...p, `[STORY] IP Account: ${ipId.slice(0, 10)}...${ipId.slice(-6)}`]);
+
+      // Build inner data for attachLicense and mintLicense
+      const attachInnerData = encodeFunctionData({
+        abi: storyData.attachLicenseTx.innerDataTemplate.abi,
+        functionName: storyData.attachLicenseTx.innerDataTemplate.functionName,
+        args: [
+          ipId,
+          storyData.attachLicenseTx.innerDataTemplate.args[1], // PIL_TEMPLATE
+          storyData.attachLicenseTx.innerDataTemplate.args[2], // licenseTermsId
+        ],
+      });
+      const mintLicenseInnerData = encodeFunctionData({
+        abi: storyData.mintLicenseTx.innerDataTemplate.abi,
+        functionName: storyData.mintLicenseTx.innerDataTemplate.functionName,
+        args: [
+          ipId,
+          storyData.mintLicenseTx.innerDataTemplate.args[1],
+          storyData.mintLicenseTx.innerDataTemplate.args[2],
+          storyData.mintLicenseTx.innerDataTemplate.args[3],
+          storyData.mintLicenseTx.innerDataTemplate.args[4],
+          storyData.mintLicenseTx.innerDataTemplate.args[5],
+          storyData.mintLicenseTx.innerDataTemplate.args[6],
+          storyData.mintLicenseTx.innerDataTemplate.args[7],
+        ],
+      });
+
+      // --- Tx 3: attachLicense via IPAccount.execute ---
+      const attachLicenseExecuteData = encodeFunctionData({
+        abi: storyData.attachLicenseTx.abi,
+        functionName: storyData.attachLicenseTx.functionName,
+        args: [
+          storyData.attachLicenseTx.args[0], // LICENSING_MODULE
+          storyData.attachLicenseTx.args[1], // value 0
+          attachInnerData,
+        ],
+      });
+      const attachTxHash = await wClient.sendTransaction({
+        account, chain: aeneid,
+        to: ipId,
+        data: attachLicenseExecuteData,
+        value: BigInt(0),
+      });
+      await pub.waitForTransactionReceipt({ hash: attachTxHash });
+      setLogs((p) => [...p, `[STORY] Attach license: ${attachTxHash.slice(0, 14)}...`]);
+
+      // --- Tx 4: mintLicense via IPAccount.execute ---
+      const mintLicenseExecuteData = encodeFunctionData({
+        abi: storyData.mintLicenseTx.abi,
+        functionName: storyData.mintLicenseTx.functionName,
+        args: [
+          storyData.mintLicenseTx.args[0],
+          storyData.mintLicenseTx.args[1],
+          mintLicenseInnerData,
+        ],
+      });
+      const mintLicenseTxHash = await wClient.sendTransaction({
+        account, chain: aeneid,
+        to: ipId,
+        data: mintLicenseExecuteData,
+        value: BigInt(0),
+      });
+      await pub.waitForTransactionReceipt({ hash: mintLicenseTxHash });
+      setLogs((p) => [...p, `[STORY] Mint license: ${mintLicenseTxHash.slice(0, 14)}...`]);
+
+      // Parse licenseTokenId from the LicenseToken Transfer event (from=0x0, to=user, tokenId)
+      let licenseTokenId = "";
+      const mintLicenseReceipt = await pub.getTransactionReceipt({ hash: mintLicenseTxHash });
+      for (const log of mintLicenseReceipt.logs) {
+        if (log.topics.length >= 4 && log.topics[3]) {
+          try {
+            licenseTokenId = BigInt(log.topics[3]).toString();
+            break;
+          } catch { /* skip */ }
+        }
+      }
+      if (!licenseTokenId) licenseTokenId = "0";
       setLogs((p) => [...p, `[STORY] License Token: #${licenseTokenId}`]);
 
-      setStep(2);
-      const agentData = {
-        id: `agent-${uuid}`, name: agentName, uuid, txHash,
-        createdAt: new Date().toISOString(), memoryCount: 1,
-        ipId: storyData.ipId, licenseTokenId,
-        agentId: agentId ?? undefined,
-        agentVaultTxHash: agentVaultTxHash ?? undefined,
-      };
-      setCreatedAgent({
-        name: agentName, uuid, txHash, createdAt: agentData.createdAt,
-        ipId: storyData.ipId,
-        licenseTokenId: licenseTokenId || undefined,
-        agentId: agentId ?? undefined,
-        agentVaultTxHash: agentVaultTxHash ?? undefined,
-        storeMemoryTxHash: storeMemoryTxHash ?? undefined,
-        storyMintTx: storyData.mintTx,
-        storyRegisterTx: storyData.registerTx,
-        storyAttachTx: storyData.attachTx,
-        storyMintLicenseTx: storyData.mintLicenseTx,
+      // --- Tx 5: createAgentAndStoreMemory on AgentVault ---
+      const agentData = encodeFunctionData({
+        abi: storyData.createAgentAndStoreMemoryTx.abi,
+        functionName: storyData.createAgentAndStoreMemoryTx.functionName,
+        args: [
+          ipId,
+          storyData.createAgentAndStoreMemoryTx.args[1], // vaultUuid
+          storyData.createAgentAndStoreMemoryTx.args[2], // contentHash
+          storyData.createAgentAndStoreMemoryTx.args[3], // metadata
+        ],
       });
-      addAgent(agentData);
-      showToast(`Agent "${agentName}" created`, txHash, "success");
+      const createAgentTxHash = await wClient.sendTransaction({
+        account, chain: aeneid,
+        to: storyData.createAgentAndStoreMemoryTx.to as `0x${string}`,
+        data: agentData,
+        value: BigInt(0),
+      });
+      const agentReceipt = await pub.waitForTransactionReceipt({ hash: createAgentTxHash });
+      setLogs((p) => [...p, `[AGENTVAULT] createAgent+storeMemory: ${createAgentTxHash.slice(0, 14)}...`]);
+
+      // Parse agentId from AgentCreated event
+      let agentId: number | null = null;
+      for (const log of agentReceipt.logs) {
+        if (log.topics.length >= 2 && log.topics[1] && log.topics[1].length === 66) {
+          try {
+            agentId = Number(BigInt("0x" + log.topics[1].slice(2, 66)));
+            if (agentId > 0) break;
+          } catch { /* skip */ }
+        }
+      }
+      if (agentId !== null) {
+        setLogs((p) => [...p, `[AGENTVAULT] Agent #${agentId} created`]);
+      }
+
+      // === STEP 3: Server registers on AgentVault (registry pointer) ===
+      setStep(2);
+      try {
+        const finalizeRes = await fetch(storyData.finalizeEndpoint || "/api/story/finalize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            walletAddress: address,
+            ipId,
+            vaultUuid: uuid,
+            txHashes: { mint: mintTxHash, register: registerTxHash, attach: attachTxHash, mintLicense: mintLicenseTxHash, createAgent: createAgentTxHash },
+          }),
+        });
+        const finalizeData = await finalizeRes.json();
+        if (finalizeData.success && !finalizeData.skipped) {
+          setLogs((p) => [...p, `[REGISTRY] registerIpForOwner: ${finalizeData.txHash.slice(0, 14)}...`]);
+        } else if (finalizeData.skipped) {
+          setLogs((p) => [...p, `[REGISTRY] already registered — skipped`]);
+        }
+      } catch (e) {
+        // Non-fatal: the spawn still succeeded, just no registry pointer.
+        console.warn("Finalize (registry pointer) failed:", e);
+        setLogs((p) => [...p, `[REGISTRY] finalize call failed (non-fatal)`]);
+      }
+
+      const agentRecord = {
+        id: `agent-${uuid}`,
+        name: agentName,
+        uuid,
+        txHash: cdrStoreTxHash,
+        createdAt: new Date().toISOString(),
+        memoryCount: 1,
+        ipId,
+        licenseTokenId,
+        agentId: agentId ?? undefined,
+        agentVaultTxHash: createAgentTxHash,
+      };
+      setCreatedAgent({ name: agentName, uuid, txHash: cdrStoreTxHash, createdAt: agentRecord.createdAt });
+      addAgent(agentRecord);
+      showToast(`Agent "${agentName}" created`, createAgentTxHash, "success");
     } catch (error: unknown) {
       const msg = (error as Error)?.message || "Failed";
       setLogs((p) => [...p, `[ERROR] ${msg}`]);
@@ -401,7 +399,6 @@ export default function SpawnContent() {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
       <div className="flex items-end justify-between">
         <div>
           <h1 className="font-display text-4xl tracking-tight text-[#f2ede6] mb-2">SPAWN AGENT</h1>
@@ -409,7 +406,6 @@ export default function SpawnContent() {
         </div>
       </div>
 
-      {/* Step Indicator */}
       <div className="flex items-center gap-3">
         {steps.map((s, i) => (
           <div key={s.id} className="flex items-center gap-3">
@@ -432,7 +428,6 @@ export default function SpawnContent() {
         ))}
       </div>
 
-      {/* Form / Result */}
       <div className="border border-[#1e1e1e] bg-[#0e0e0e] p-8">
         {!createdAgent ? (
           <div className="space-y-5">
@@ -462,25 +457,17 @@ export default function SpawnContent() {
                         <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
                       </svg>
                       <div className="font-mono text-[10px] text-[#f87171] space-y-1">
-                        <p>INSUFFICIENT IP BALANCE — you need at least {balance.requiredIp} IP to cover 4 setup transactions (mint NFT, register IP, attach license, mint license token).</p>
-                        <p className="text-[#5a5a5a]">Click DRIP TESTNET IP to receive 0.1 IP instantly (covers ~20 spawns). One drip per wallet per hour.</p>
-                        {dripTxHash && (
-                          <p className="text-[#22c55e]">
-                            ✓ Drip sent: {dripTxHash.slice(0, 14)}...{dripTxHash.slice(-6)} — auto-rechecking in 4s
-                          </p>
-                        )}
+                        <p>INSUFFICIENT IP BALANCE — spawning requires {MIN_BALANCE_FOR_SPAWN_IP} IP for 5 user-signed setup transactions (mint NFT, register IP, attach license, mint license, register agent).</p>
+                        <p className="text-[#5a5a5a]">No in-app faucet — get testnet IP from one of the external faucets below.</p>
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <button type="button" onClick={handleDrip} disabled={dripping} className="font-mono text-[10px] tracking-widest bg-[#f87171] text-[#0a0e27] px-4 py-2 hover:bg-[#fca5a5] transition-colors font-semibold disabled:opacity-30 disabled:cursor-not-allowed">
-                        {dripping ? "SENDING IP..." : "DRIP TESTNET IP →"}
-                      </button>
                       <button type="button" onClick={handleRecheckBalance} disabled={checkingBalance} className="font-mono text-[10px] tracking-widest border border-[#1e1e1e] text-[#5a5a5a] px-4 py-2 hover:border-[#00d9ff]/50 hover:text-[#f2ede6] transition-colors disabled:opacity-30">
                         {checkingBalance ? "CHECKING..." : "RECHECK"}
                       </button>
                     </div>
                     <div className="border-t border-[#f87171]/20 pt-3 mt-1 space-y-2">
-                      <p className="font-mono text-[9px] text-[#5a5a5a] tracking-widest">OR — GET TESTNET IP FROM AN EXTERNAL FAUCET:</p>
+                      <p className="font-mono text-[9px] text-[#5a5a5a] tracking-widest">GET TESTNET IP FROM AN EXTERNAL FAUCET:</p>
                       <div className="flex flex-wrap gap-2">
                         <a href={FAUCET_URLS.primary} target="_blank" rel="noopener noreferrer" className="font-mono text-[10px] tracking-widest bg-[#00d9ff] text-[#0a0e27] px-4 py-2 hover:bg-[#00e6ff] transition-colors font-semibold">
                           ASTROSTAKE · 1 IP → {address?.slice(0, 6)}...
@@ -548,69 +535,20 @@ export default function SpawnContent() {
                 <span className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">UUID</span>
                 <span className="font-mono text-[10px] text-[#f2ede6]">{createdAgent.uuid}</span>
               </div>
-              {createdAgent.agentId !== undefined && (
-                <div className="flex justify-between">
-                  <span className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">AGENT ID</span>
-                  <span className="font-mono text-[10px] text-[#a78bfa]">#{createdAgent.agentId}</span>
-                </div>
-              )}
-              {createdAgent.licenseTokenId && createdAgent.licenseTokenId !== "0" && (
-                <div className="flex justify-between">
-                  <span className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">LICENSE</span>
-                  <span className="font-mono text-[10px] text-[#f2ede6]">#{createdAgent.licenseTokenId}</span>
-                </div>
-              )}
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between">
                 <span className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">STATUS</span>
                 <div className="flex items-center gap-1.5">
                   <div className="w-1.5 h-1.5 rounded-full bg-[#22c55e]" />
-                  <span className="font-mono text-[10px] text-[#22c55e]">ENCRYPTED · 5-6 TXS</span>
+                  <span className="font-mono text-[10px] text-[#22c55e]">ENCRYPTED</span>
                 </div>
               </div>
-              <div className="border-t border-[#1e1e1e] pt-3 mt-1 space-y-1.5">
-                <div className="font-mono text-[9px] text-[#3a3a3a] tracking-widest mb-1">ON-CHAIN TRANSACTIONS</div>
-                {createdAgent.storyMintTx && (
-                  <div className="flex justify-between text-[10px]">
-                    <span className="font-mono text-[#5a5a5a]">Mint NFT</span>
-                    <a href={`${EXPLORER_URL}/tx/${createdAgent.storyMintTx}`} target="_blank" rel="noopener noreferrer" className="font-mono text-[#00d9ff] hover:text-[#00e6ff]">{createdAgent.storyMintTx.slice(0, 10)}...→</a>
-                  </div>
-                )}
-                {createdAgent.storyRegisterTx && (
-                  <div className="flex justify-between text-[10px]">
-                    <span className="font-mono text-[#5a5a5a]">Register IP</span>
-                    <a href={`${EXPLORER_URL}/tx/${createdAgent.storyRegisterTx}`} target="_blank" rel="noopener noreferrer" className="font-mono text-[#00d9ff] hover:text-[#00e6ff]">{createdAgent.storyRegisterTx.slice(0, 10)}...→</a>
-                  </div>
-                )}
-                {createdAgent.storyAttachTx && (
-                  <div className="flex justify-between text-[10px]">
-                    <span className="font-mono text-[#5a5a5a]">Attach License</span>
-                    <a href={`${EXPLORER_URL}/tx/${createdAgent.storyAttachTx}`} target="_blank" rel="noopener noreferrer" className="font-mono text-[#00d9ff] hover:text-[#00e6ff]">{createdAgent.storyAttachTx.slice(0, 10)}...→</a>
-                  </div>
-                )}
-                {createdAgent.storyMintLicenseTx && (
-                  <div className="flex justify-between text-[10px]">
-                    <span className="font-mono text-[#5a5a5a]">Mint License</span>
-                    <a href={`${EXPLORER_URL}/tx/${createdAgent.storyMintLicenseTx}`} target="_blank" rel="noopener noreferrer" className="font-mono text-[#00d9ff] hover:text-[#00e6ff]">{createdAgent.storyMintLicenseTx.slice(0, 10)}...→</a>
-                  </div>
-                )}
-                {createdAgent.agentVaultTxHash && (
-                  <div className="flex justify-between text-[10px]">
-                    <span className="font-mono text-[#5a5a5a]">CreateAgent</span>
-                    <a href={`${EXPLORER_URL}/tx/${createdAgent.agentVaultTxHash}`} target="_blank" rel="noopener noreferrer" className="font-mono text-[#00d9ff] hover:text-[#00e6ff]">{createdAgent.agentVaultTxHash.slice(0, 10)}...→</a>
-                  </div>
-                )}
-                {createdAgent.storeMemoryTxHash && (
-                  <div className="flex justify-between text-[10px]">
-                    <span className="font-mono text-[#5a5a5a]">StoreMemory</span>
-                    <a href={`${EXPLORER_URL}/tx/${createdAgent.storeMemoryTxHash}`} target="_blank" rel="noopener noreferrer" className="font-mono text-[#00d9ff] hover:text-[#00e6ff]">{createdAgent.storeMemoryTxHash.slice(0, 10)}...→</a>
-                  </div>
-                )}
-                <div className="flex justify-between text-[10px] pt-1 border-t border-[#1e1e1e]/50">
-                  <span className="font-mono text-[#5a5a5a]">CDR Write</span>
-                  <a href={`${EXPLORER_URL}/tx/${createdAgent.txHash}`} target="_blank" rel="noopener noreferrer" className="font-mono text-[#00d9ff] hover:text-[#00e6ff]">{createdAgent.txHash.slice(0, 10)}...→</a>
-                </div>
+              <div className="flex justify-between">
+                <span className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">CDR TX</span>
+                <a href={`${EXPLORER_URL}/tx/${createdAgent.txHash}`} target="_blank" rel="noopener noreferrer" className="font-mono text-[10px] text-[#00d9ff] hover:text-[#00e6ff] transition-colors">
+                  {createdAgent.txHash.slice(0, 10)}...→
+                </a>
               </div>
-              <div className="flex justify-between pt-1">
+              <div className="flex justify-between">
                 <span className="font-mono text-[10px] text-[#3a3a3a] tracking-widest">FILE</span>
                 <span className="font-mono text-[10px] text-[#5a5a5a]">agent-{createdAgent.uuid}.md</span>
               </div>

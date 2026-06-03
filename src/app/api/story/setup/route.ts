@@ -3,30 +3,130 @@ import { rateLimit, getClientIp } from "@/lib/rateLimit";
 import { isValidAddress, isNonEmptyString, isPositiveIntString } from "@/lib/validate";
 import { safeError } from "@/lib/apiError";
 import { csrfCheck } from "@/lib/csrf";
+import {
+  CONTRACTS,
+  RPC_URL,
+  STORY_API_URL,
+  CHAIN_ID,
+  LICENSE_TERMS_ID,
+} from "@/lib/constants";
+import { keccak256, encodePacked } from "viem";
 
-const RPC_URL = process.env.RPC_URL || "https://aeneid.storyrpc.io";
+// POST /api/story/setup
+//
+// Spawn flow (user-pays model):
+//   1. Client: POST /api/story/setup with { walletAddress, name, vaultUuid }
+//      → server returns pre-encoded calldata templates for the 5 user-signed txs:
+//        mint, register, attachLicense, mintLicense, createAgentAndStoreMemory
+//   2. Client: signs `mint` (server returns tokenId from receipt)
+//   3. Client: signs `register` (gets the IP Account address = ipId)
+//   4. Client: signs `attachLicense` via IPAccount.execute
+//   5. Client: signs `mintLicense` via IPAccount.execute
+//   6. Client: signs `createAgentAndStoreMemory` (user becomes agent.owner)
+//   7. Client: POST /api/story/setup/finalize with the receipts → server signs
+//      `registerIpForOwner(owner, ipId, vaultId)` on the AgentVault contract
+//      so external clients can discover this agent via getUserIpIds(owner).
+//
+// The user pays for 5 txs. The deployer wallet only pays for the registry
+// pointer (1 tx). No more "deployer drained" issue.
+//
+// Pre-flight: the user must have at least 0.1 IP on Aeneid. The spawn page
+// shows external faucet links if the balance check fails.
 
-const SIMPLE_NFT = "0x6ceb4c8882a74532754363aa8662cc2d0166ff89";
-const IP_ASSET_REGISTRY = "0x77319B4031e6eF1250907aa00018B8B1c67a244b";
-const LICENSING_MODULE = "0x04fbd8a2e56dd85CFD5500A4A4DfA955B9f1dE6f";
-const PIL_TEMPLATE = "0x2E896b0b2Fdb7457499B56AAaA4AE55BCB4Cd316";
-const LICENSE_TOKEN = "0xFe3838BFb30B34170F00030B52eA4893d8aAC6bC";
-const AGENT_VAULT = "0x7e0f1182c444ba420a1d98c81c2da05bc4d1b0a8";
+const AGENT_VAULT_ABI = [
+  {
+    name: "createAgentAndStoreMemory",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "ipId", type: "address" },
+      { name: "vaultId", type: "uint256" },
+      { name: "contentHash", type: "bytes32" },
+      { name: "metadata", type: "string" },
+    ],
+    outputs: [{ name: "agentId", type: "uint256" }],
+  },
+] as const;
 
-const chain = {
-  id: 1315, name: "Aeneid" as const, network: "aeneid" as const,
-  nativeCurrency: { name: "IP", symbol: "IP", decimals: 18 },
-  rpcUrls: { default: { http: [RPC_URL] } },
-};
+const SIMPLE_NFT_MINT_ABI = [
+  {
+    name: "mint",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "to", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
 
-let nonceLock: Promise<void> = Promise.resolve();
+const IP_REGISTRY_REGISTER_ABI = [
+  {
+    name: "register",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "chainId", type: "uint256" },
+      { name: "tokenContract", type: "address" },
+      { name: "tokenId", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "address" }],
+  },
+] as const;
+
+const LICENSING_ATTACH_ABI = [
+  {
+    name: "attachLicenseTerms",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "ipId", type: "address" },
+      { name: "licenseTemplate", type: "address" },
+      { name: "licenseTermsId", type: "uint256" },
+    ],
+    outputs: [],
+  },
+] as const;
+
+const LICENSING_MINT_ABI = [
+  {
+    name: "mintLicenseTokens",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "licensorIpId", type: "address" },
+      { name: "licenseTemplate", type: "address" },
+      { name: "licenseTermsId", type: "uint256" },
+      { name: "amount", type: "uint256" },
+      { name: "receiver", type: "address" },
+      { name: "royaltyContext", type: "bytes" },
+      { name: "maxMintingFee", type: "uint256" },
+      { name: "maxRevenueShare", type: "uint32" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
+const IP_ACCOUNT_EXECUTE_ABI = [
+  {
+    name: "execute",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "value", type: "uint256" },
+      { name: "data", type: "bytes" },
+    ],
+    outputs: [{ name: "result", type: "bytes" }],
+  },
+] as const;
+
+let initLock: Promise<void> = Promise.resolve();
 
 export async function POST(request: NextRequest) {
-  // Serialize story setup requests to avoid nonce conflicts
+  // Serialize init requests to prevent nonce conflicts on the registry side.
   const releaseLock = await new Promise<() => void>((resolve) => {
-    const prev = nonceLock;
+    const prev = initLock;
     let release!: () => void;
-    nonceLock = new Promise<void>((r) => { release = r; });
+    initLock = new Promise<void>((r) => { release = r; });
     prev.then(() => resolve(release));
   });
 
@@ -34,11 +134,10 @@ export async function POST(request: NextRequest) {
     const csrf = csrfCheck(request);
     if (csrf) return csrf;
 
-    const { walletAddress, name, vaultUuid } = await request.json();
-    if (!walletAddress) {
-      return NextResponse.json({ error: "Missing walletAddress" }, { status: 400 });
-    }
-    if (!isValidAddress(walletAddress)) {
+    const body = await request.json();
+    const { walletAddress, name, vaultUuid } = body;
+
+    if (!walletAddress || !isValidAddress(walletAddress)) {
       return NextResponse.json({ error: "Invalid walletAddress" }, { status: 400 });
     }
     if (!isNonEmptyString(name, 100)) {
@@ -48,7 +147,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid vaultUuid" }, { status: 400 });
     }
 
-    const rl = rateLimit(`story:${getClientIp(request)}`, 5, 60 * 60 * 1000);
+    const rl = rateLimit(`story-init:${getClientIp(request)}`, 30, 60 * 1000);
     if (!rl.ok) {
       return NextResponse.json(
         { error: "Rate limit exceeded", resetMs: rl.resetMs },
@@ -56,297 +155,100 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const PRIVATE_KEY = process.env.WALLET_PRIVATE_KEY;
-    if (!PRIVATE_KEY) {
-      return NextResponse.json({ error: "Server signer not configured" }, { status: 500 });
-    }
+    // Pre-encode the inner data for attachLicense and mintLicense (these go
+    // inside IPAccount.execute). The client wraps them with the IP Account's
+    // `execute(to=licensingModule, value=0, data=<inner>)` calldata at sign time.
+    const attachLicenseInnerDataPlaceholder =
+      "0x" as `0x${string}`; // client fills in with real ipId
+    const mintLicenseInnerDataPlaceholder =
+      "0x" as `0x${string}`;
 
-    const viem = await import("viem");
-    const { createPublicClient, createWalletClient, http, encodeFunctionData, encodeAbiParameters, keccak256, encodePacked } = viem;
-    const { privateKeyToAccount } = await import("viem/accounts");
-
-    const account = privateKeyToAccount(PRIVATE_KEY as `0x${string}`);
-    const publicClient = createPublicClient({ transport: http(RPC_URL), chain });
-    const walletClient = createWalletClient({ account, transport: http(RPC_URL), chain });
-
-    const isDeployer = walletAddress.toLowerCase() === account.address.toLowerCase();
-
-    const sendTx = async (params: { to: `0x${string}`; data: `0x${string}`; nonce: number }) => {
-      const gasPrice = await publicClient.getGasPrice();
-      const signed = await walletClient.signTransaction({
-        ...params,
-        account,
-        value: BigInt(0),
-        gas: BigInt(300000),
-        gasPrice,
-        chainId: chain.id,
-      });
-      return publicClient.sendRawTransaction({ serializedTransaction: signed });
-    };
-
-    const processStep = async (
-      label: string,
-      build: (nonce: number) => { to: `0x${string}`; data: `0x${string}` }
-    ): Promise<{ txHash: `0x${string}`; receipt: { status: "success" | "reverted"; blockNumber: bigint; logs: readonly { address: string; topics: readonly `0x${string}`[] }[] }; nextNonce: number }> => {
-      const txHash = await sendTx({ ...build(currentNonce), nonce: currentNonce });
-      console.log(`${label} tx:`, txHash);
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
-      if (receipt.status === "reverted") {
-        throw new Error(`${label} tx reverted: ${txHash}`);
-      }
-      return { txHash, receipt, nextNonce: currentNonce + 1 };
-    };
-
-    let currentNonce = await publicClient.getTransactionCount({ address: account.address });
-
-    // 1. Mint NFT to user's wallet
-    const mintStep = await processStep("Mint", (n) => ({
-      to: SIMPLE_NFT as `0x${string}`,
-      data: encodeFunctionData({
-        abi: [{ inputs: [{ internalType: "address", name: "to", type: "address" }], name: "mint", outputs: [{ internalType: "uint256", name: "", type: "uint256" }], stateMutability: "nonpayable", type: "function" }],
-        functionName: "mint",
-        args: [walletAddress as `0x${string}`],
-      }),
-    }));
-    currentNonce = mintStep.nextNonce;
-    const tokenId = mintStep.receipt.logs[0] ? BigInt(mintStep.receipt.logs[0].topics[3] || "0x0") : BigInt(0);
-    console.log("Token ID:", tokenId.toString());
-
-    // 2. Register IP Asset
-    const registerStep = await processStep("Register", (n) => ({
-      to: IP_ASSET_REGISTRY as `0x${string}`,
-      data: encodeFunctionData({
-        abi: [{ inputs: [{ internalType: "uint256", name: "chainId", type: "uint256" }, { internalType: "address", name: "tokenContract", type: "address" }, { internalType: "uint256", name: "tokenId", type: "uint256" }], name: "register", outputs: [{ internalType: "address", name: "", type: "address" }], stateMutability: "nonpayable", type: "function" }],
-        functionName: "register",
-        args: [BigInt(chain.id), SIMPLE_NFT as `0x${string}`, tokenId],
-      }),
-    }));
-    currentNonce = registerStep.nextNonce;
-    let ipId = account.address;
-    for (const log of registerStep.receipt.logs) {
-      if (log.address.toLowerCase() === IP_ASSET_REGISTRY.toLowerCase() && log.topics.length >= 2) {
-        ipId = ("0x" + log.topics[1]?.slice(26)) as `0x${string}`;
-        break;
-      }
-    }
-    console.log("IP ID:", ipId);
-
-    // 3. Attach License Terms (idempotent, server-side only)
-    const licenseTermsId = BigInt(2054);
-    let attachStep: { txHash: `0x${string}`; receipt: { status: "success" | "reverted"; blockNumber: bigint; logs: readonly { address: string; topics: readonly `0x${string}`[] }[] }; nextNonce: number } | undefined;
-    let isAttached = false;
-    if (isDeployer) {
-      try {
-        isAttached = await publicClient.readContract({
-          address: LICENSING_MODULE as `0x${string}`,
-          abi: [{ name: "hasIpAttachedLicenseTerms", type: "function", stateMutability: "view",
-                  inputs: [{ type: "address", name: "ipId" }, { type: "address", name: "licenseTemplate" }, { type: "uint256", name: "licenseTermsId" }],
-                  outputs: [{ type: "bool" }] }],
-          functionName: "hasIpAttachedLicenseTerms",
-          args: [ipId, PIL_TEMPLATE as `0x${string}`, licenseTermsId],
-        }) as boolean;
-      } catch (e) {
-        console.log(`hasIpAttachedLicenseTerms reverted for ${ipId} — assuming not attached`);
-        isAttached = false;
-      }
-    }
-    if (isAttached) {
-      console.log(`License terms ${licenseTermsId} already attached to ${ipId} — skipping step 3`);
-    } else if (isDeployer) {
-      attachStep = await processStep("AttachLicense", (n) => ({
-        to: LICENSING_MODULE as `0x${string}`,
-        data: encodeFunctionData({
-          abi: [{ inputs: [{ type: "address", name: "ipId" }, { type: "address", name: "licenseTemplate" }, { type: "uint256", name: "licenseTermsId" }], name: "attachLicenseTerms", stateMutability: "nonpayable", type: "function" }],
-          functionName: "attachLicenseTerms",
-          args: [ipId, PIL_TEMPLATE as `0x${string}`, licenseTermsId],
-        }),
-      }));
-      currentNonce = attachStep.nextNonce;
-      console.log("License terms attached");
-    }
-
-    // 4. Mint License Token (server-side only)
-    let licenseTokenId = BigInt(0);
-    let mintedNewLicense = false;
-    let mintLicenseStep: { txHash: `0x${string}`; receipt: { status: "success" | "reverted"; blockNumber: bigint; logs: readonly { address: string; topics: readonly `0x${string}`[] }[] }; nextNonce: number } | undefined;
-    if (isDeployer) {
-      try {
-        const canonical = await publicClient.readContract({
-          address: LICENSING_MODULE as `0x${string}`,
-          abi: [{ name: "getLicenseTokenId", type: "function", stateMutability: "view",
-                  inputs: [{ type: "address", name: "ipId" }, { type: "address", name: "licenseTemplate" }, { type: "uint256", name: "licenseTermsId" }],
-                  outputs: [{ type: "uint256" }] }],
-          functionName: "getLicenseTokenId",
-          args: [ipId, PIL_TEMPLATE as `0x${string}`, licenseTermsId],
-        }) as bigint;
-        if (canonical > BigInt(0)) {
-          licenseTokenId = canonical;
-          console.log(`Reusing existing license token #${licenseTokenId} for IP ${ipId}`);
-        }
-      } catch {
-        // Fall through to mint
-      }
-
-      if (licenseTokenId === BigInt(0)) {
-        mintLicenseStep = await processStep("MintLicense", (n) => ({
-          to: LICENSING_MODULE as `0x${string}`,
-          data: encodeFunctionData({
-            abi: [{
-              inputs: [
-                { type: "address", name: "licensorIpId" }, { type: "address", name: "licenseTemplate" },
-                { type: "uint256", name: "licenseTermsId" }, { type: "uint256", name: "amount" },
-                { type: "address", name: "receiver" }, { type: "bytes", name: "royaltyContext" },
-                { type: "uint256", name: "maxMintingFee" }, { type: "uint32", name: "maxRevenueShare" },
-              ],
-              name: "mintLicenseTokens", outputs: [{ type: "uint256" }], stateMutability: "nonpayable", type: "function",
-            }],
-            functionName: "mintLicenseTokens",
-            args: [ipId, PIL_TEMPLATE as `0x${string}`, licenseTermsId, BigInt(1), walletAddress as `0x${string}`, "0x", BigInt(0), 0],
-          }),
-        }));
-        currentNonce = mintLicenseStep.nextNonce;
-        mintedNewLicense = true;
-        try {
-          const canonical = await publicClient.readContract({
-            address: LICENSING_MODULE as `0x${string}`,
-            abi: [{ name: "getLicenseTokenId", type: "function", stateMutability: "view",
-                    inputs: [{ type: "address", name: "ipId" }, { type: "address", name: "licenseTemplate" }, { type: "uint256", name: "licenseTermsId" }],
-                    outputs: [{ type: "uint256" }] }],
-            functionName: "getLicenseTokenId",
-            args: [ipId, PIL_TEMPLATE as `0x${string}`, licenseTermsId],
-          }) as bigint;
-          if (canonical > BigInt(0)) licenseTokenId = canonical;
-        } catch {
-          // leave licenseTokenId = 0
-        }
-      }
-    }
-    console.log("License token resolved, tokenId:", licenseTokenId.toString());
-
-    // 5. createAgent on AgentVault contract (user signs as agent owner)
-    //    AgentVault.createAgent(string name, uint256 vaultUuid) returns uint256 agentId
-    //    msg.sender becomes agent.owner — user MUST sign for true ownership.
-    const createAgentData = encodeFunctionData({
-      abi: [{ name: "createAgent", type: "function", stateMutability: "nonpayable",
-              inputs: [{ name: "name", type: "string" }, { name: "vaultUuid", type: "uint256" }],
-              outputs: [{ name: "agentId", type: "uint256" }] }],
-      functionName: "createAgent",
-      args: [name, BigInt(vaultUuid)],
-    });
-
-    let createAgentStep: { txHash: `0x${string}`; receipt: { status: "success" | "reverted"; blockNumber: bigint; logs: readonly { address: string; topics: readonly `0x${string}`[] }[] }; nextNonce: number } | undefined;
-    if (isDeployer) {
-      createAgentStep = await processStep("CreateAgent", (n) => ({
-        to: AGENT_VAULT as `0x${string}`,
-        data: createAgentData,
-      }));
-      currentNonce = createAgentStep.nextNonce;
-      console.log("createAgent tx:", createAgentStep.txHash);
-    }
-
-    // Parse agentId from AgentCreated(uint256 indexed, address indexed, uint256) log
-    let agentId: number | null = null;
-    if (createAgentStep) {
-      for (const log of createAgentStep.receipt.logs) {
-        if (log.address.toLowerCase() === AGENT_VAULT.toLowerCase() && log.topics.length >= 2) {
-          const raw = log.topics[1];
-          if (raw && raw.length >= 66) {
-            agentId = Number(BigInt("0x" + raw.slice(2, 66)));
-            break;
-          }
-        }
-      }
-      if (agentId === null) {
-        console.warn("AgentCreated event not found in createAgent receipt");
-      }
-    }
-
-    // 6. storeMemory on AgentVault — references the initial CDR vault on-chain
-    //    contentHash = keccak256(vaultUuid) — deterministic 32-byte reference
-    //    metadata = String(vaultUuid) — human-readable CDR vault pointer
-    const contentHash = keccak256(encodePacked(["uint256"], [BigInt(vaultUuid)]));
-    const metadata = String(vaultUuid);
-    const storeMemoryData = encodeFunctionData({
-      abi: [{ name: "storeMemory", type: "function", stateMutability: "nonpayable",
-              inputs: [
-                { name: "agentId", type: "uint256" },
-                { name: "contentHash", type: "bytes32" },
-                { name: "metadata", type: "string" },
-              ],
-              outputs: [{ name: "memoryId", type: "uint256" }] }],
-      functionName: "storeMemory",
-      args: [BigInt(agentId ?? 0), contentHash, metadata],
-    });
-
-    let storeMemoryStep: { txHash: `0x${string}`; receipt: { status: "success" | "reverted"; blockNumber: bigint; logs: readonly { address: string; topics: readonly `0x${string}`[] }[] }; nextNonce: number } | undefined;
-    if (isDeployer) {
-      storeMemoryStep = await processStep("StoreMemory", (n) => ({
-        to: AGENT_VAULT as `0x${string}`,
-        data: storeMemoryData,
-      }));
-      currentNonce = storeMemoryStep.nextNonce;
-      console.log("storeMemory tx:", storeMemoryStep.txHash);
-    }
-
-    const readConditionData = encodeAbiParameters(
-      [{ type: "address" }, { type: "address" }],
-      [LICENSE_TOKEN as `0x${string}`, ipId]
-    );
+    // contentHash = keccak256(vaultUuid). Stable across the agent's lifetime.
+    const vaultIdBig = BigInt(vaultUuid);
+    const contentHash = keccak256(encodePacked(["uint256"], [vaultIdBig]));
 
     return NextResponse.json({
       success: true,
-      ipId,
-      licenseTokenId: licenseTokenId.toString(),
-      licenseTermsId: licenseTermsId.toString(),
-      readConditionData,
-      mintTx: mintStep.txHash,
-      registerTx: registerStep.txHash,
-      attachTx: attachStep?.txHash ?? null,
-      mintLicenseTx: mintLicenseStep?.txHash ?? null,
-      agentId,
-      agentVaultTx: createAgentStep?.txHash ?? null,
-      storeMemoryTx: storeMemoryStep?.txHash ?? null,
-      reused: { attach: !!isAttached, license: licenseTokenId > BigInt(0) && !mintedNewLicense },
-      requiresUserSigning: !isDeployer,
-      // Pre-encoded call data for client-side signing
-      // Group 1: Licensing txs (to IP Account — sequential, can't batch atomically)
-      // Group 2: AgentVault txs (to same contract — can be batched via EIP-5792 if wallet supports)
-      pendingUserTxs: !isDeployer ? {
-        attachLicenseTerms: encodeFunctionData({
-          abi: [{ inputs: [{ type: "address", name: "ipId" }, { type: "address", name: "licenseTemplate" }, { type: "uint256", name: "licenseTermsId" }], name: "attachLicenseTerms", stateMutability: "nonpayable", type: "function" }],
+      chainId: CHAIN_ID,
+      rpcUrl: RPC_URL,
+      licenseTermsId: LICENSE_TERMS_ID.toString(),
+
+      // Pre-signed mint calldata (user signs this first).
+      mintTx: {
+        to: CONTRACTS.SIMPLE_NFT,
+        abi: SIMPLE_NFT_MINT_ABI,
+        functionName: "mint",
+        args: [walletAddress],
+      },
+
+      // The remaining 4 txs need data from receipts (tokenId from mint, ipId
+      // from register). The client encodes them with viem using the ABIs and
+      // arg templates below.
+      registerTx: {
+        to: CONTRACTS.IP_ASSET_REGISTRY,
+        abi: IP_REGISTRY_REGISTER_ABI,
+        functionName: "register",
+        args: [BigInt(CHAIN_ID), CONTRACTS.SIMPLE_NFT, "<tokenId-from-mint>"],
+        // After signing, parse the IP Account address from the IPAssetRegistry
+        // event log. The IP Account is created with CREATE2 so the address is
+        // deterministic — but we let the client read it from the receipt to
+        // avoid hardcoding the CREATE2 formula.
+        ipIdFromReceipt: true,
+      },
+
+      attachLicenseTx: {
+        to: "<ipId>", // IP Account address (from register receipt)
+        abi: IP_ACCOUNT_EXECUTE_ABI,
+        functionName: "execute",
+        args: [
+          CONTRACTS.LICENSING_MODULE,
+          BigInt(0),
+          "<innerAttachLicenseData>",
+        ],
+        // Client builds inner data using this template:
+        innerDataTemplate: {
+          abi: LICENSING_ATTACH_ABI,
           functionName: "attachLicenseTerms",
-          args: [ipId, PIL_TEMPLATE as `0x${string}`, licenseTermsId],
-        }),
-        mintLicenseTokens: encodeFunctionData({
-          abi: [{
-            inputs: [
-              { type: "address", name: "licensorIpId" }, { type: "address", name: "licenseTemplate" },
-              { type: "uint256", name: "licenseTermsId" }, { type: "uint256", name: "amount" },
-              { type: "address", name: "receiver" }, { type: "bytes", name: "royaltyContext" },
-              { type: "uint256", name: "maxMintingFee" }, { type: "uint32", name: "maxRevenueShare" },
-            ],
-            name: "mintLicenseTokens", outputs: [{ type: "uint256" }], stateMutability: "nonpayable", type: "function",
-          }],
-          functionName: "mintLicenseTokens",
-          args: [ipId, PIL_TEMPLATE as `0x${string}`, licenseTermsId, BigInt(1), walletAddress as `0x${string}`, "0x", BigInt(0), 0],
-        }),
-        createAgent: createAgentData,
-        storeMemory: storeMemoryData,
-        targets: {
-          attachLicenseTerms: LICENSING_MODULE,
-          mintLicenseTokens: LICENSING_MODULE,
-          createAgent: AGENT_VAULT,
-          storeMemory: AGENT_VAULT,
+          args: ["<ipId>", CONTRACTS.PIL_TEMPLATE, BigInt(LICENSE_TERMS_ID)],
         },
-        licensingModule: LICENSING_MODULE,
-        pilTemplate: PIL_TEMPLATE,
-        licenseTermsId: licenseTermsId.toString(),
-        agentVault: AGENT_VAULT,
-        chainId: 1315,
-      } : null,
+      },
+
+      mintLicenseTx: {
+        to: "<ipId>",
+        abi: IP_ACCOUNT_EXECUTE_ABI,
+        functionName: "execute",
+        args: [
+          CONTRACTS.LICENSING_MODULE,
+          BigInt(0),
+          "<innerMintLicenseData>",
+        ],
+        innerDataTemplate: {
+          abi: LICENSING_MINT_ABI,
+          functionName: "mintLicenseTokens",
+          args: [
+            "<ipId>",
+            CONTRACTS.PIL_TEMPLATE,
+            BigInt(LICENSE_TERMS_ID),
+            BigInt(1),
+            walletAddress,
+            "0x",
+            BigInt(0),
+            0,
+          ],
+        },
+      },
+
+      createAgentAndStoreMemoryTx: {
+        to: CONTRACTS.AGENT_VAULT,
+        abi: AGENT_VAULT_ABI,
+        functionName: "createAgentAndStoreMemory",
+        args: ["<ipId>", vaultIdBig, contentHash, String(vaultUuid)],
+      },
+
+      // Reference: where to call finalize after all 5 user txs are mined.
+      finalizeEndpoint: "/api/story/finalize",
     });
   } catch (error) {
-    console.error("Story setup error:", error);
     return safeError("Story setup", error);
   } finally {
     releaseLock();

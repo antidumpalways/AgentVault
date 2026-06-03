@@ -4,8 +4,10 @@ import { isValidAddress } from "@/lib/validate";
 
 const RPC_URL = process.env.RPC_URL || "https://aeneid.storyrpc.io";
 
-// Minimum balance to spawn an agent: covers 4 txs (mint, register, attach, mintLicense) at ~0.005 IP each.
-const SPAWN_MIN_BALANCE_WEI = BigInt("50000000000000000"); // 0.05 IP
+// Minimum balance to spawn an agent: covers 5 user-signed txs (mint NFT, register
+// IP, attach license, mint license, createAgentAndStoreMemory). On Aeneid a typical
+// tx costs ~0.005–0.01 IP, so 0.1 IP is enough for one spawn with safety margin.
+const SPAWN_MIN_BALANCE_WEI = BigInt("100000000000000000"); // 0.1 IP
 
 export async function POST(request: NextRequest) {
   const csrf = csrfCheck(request);

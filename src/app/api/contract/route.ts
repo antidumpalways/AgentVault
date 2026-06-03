@@ -1,20 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isValidAddress } from "@/lib/validate";
 import { csrfCheck } from "@/lib/csrf";
-
-const RPC_URL = process.env.RPC_URL || "https://aeneid.storyrpc.io";
-const AGENT_VAULT_ADDRESS = "0x7e0f1182c444ba420a1d98c81c2da05bc4d1b0a8";
+import { CONTRACTS, RPC_URL } from "@/lib/constants";
 
 const AGENT_VAULT_ABI = [
   {
-    name: "checkAccess",
+    name: "getUserIpIds",
     type: "function",
     stateMutability: "view",
-    inputs: [
-      { name: "agentId", type: "uint256" },
-      { name: "user", type: "address" },
-    ],
-    outputs: [{ name: "", type: "bool" }],
+    inputs: [{ name: "user", type: "address" }],
+    outputs: [{ name: "", type: "address[]" }],
   },
   {
     name: "getUserAgents",
@@ -24,14 +19,42 @@ const AGENT_VAULT_ABI = [
     outputs: [{ name: "", type: "uint256[]" }],
   },
   {
-    name: "getAgentMemoryCount",
+    name: "getIpInfo",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "ipId", type: "address" }],
+    outputs: [
+      { name: "owner", type: "address" },
+      { name: "agentId", type: "uint256" },
+      { name: "vaultId", type: "uint256" },
+      { name: "exists", type: "bool" },
+    ],
+  },
+  {
+    name: "getAgent",
     type: "function",
     stateMutability: "view",
     inputs: [{ name: "agentId", type: "uint256" }],
-    outputs: [{ name: "", type: "uint256" }],
+    outputs: [
+      { name: "agentId", type: "uint256" },
+      { name: "ipId", type: "address" },
+      { name: "vaultId", type: "uint256" },
+      { name: "owner", type: "address" },
+      { name: "memoryRoot", type: "bytes32" },
+      { name: "createdAt", type: "uint256" },
+      { name: "expiresAt", type: "uint256" },
+      { name: "isActive", type: "bool" },
+    ],
   },
-];
+] as const;
 
+// POST /api/contract
+// Read-only access to the AgentVault registry.
+// Actions:
+//   - getUserIpIds(address)  → address[] of IP Asset ids owned by user
+//   - getUserAgents(address) → uint256[] of agentIds created by user
+//   - getIpInfo(address)     → { owner, agentId, vaultId, exists }
+//   - getAgent(uint256)      → full agent struct
 export async function POST(request: NextRequest) {
   const csrf = csrfCheck(request);
   if (csrf) return csrf;
@@ -39,11 +62,24 @@ export async function POST(request: NextRequest) {
     const { action, ...params } = await request.json();
 
     const { createPublicClient, http } = await import("viem");
-
     const publicClient = createPublicClient({ transport: http(RPC_URL) });
-    const addr = AGENT_VAULT_ADDRESS as `0x${string}`;
+    const addr = CONTRACTS.AGENT_VAULT as `0x${string}`;
 
     switch (action) {
+      case "getUserIpIds": {
+        const { userAddress } = params;
+        if (!isValidAddress(userAddress)) {
+          return NextResponse.json({ error: "Invalid userAddress" }, { status: 400 });
+        }
+        const result = await publicClient.readContract({
+          address: addr,
+          abi: AGENT_VAULT_ABI,
+          functionName: "getUserIpIds",
+          args: [userAddress as `0x${string}`],
+        });
+        return NextResponse.json({ success: true, ipIds: result });
+      }
+
       case "getUserAgents": {
         const { userAddress } = params;
         if (!isValidAddress(userAddress)) {
@@ -58,29 +94,29 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, agents: result });
       }
 
-      case "checkAccess": {
-        const { agentId, userAddress } = params;
-        if (!isValidAddress(userAddress)) {
-          return NextResponse.json({ error: "Invalid userAddress" }, { status: 400 });
+      case "getIpInfo": {
+        const { ipId } = params;
+        if (!isValidAddress(ipId)) {
+          return NextResponse.json({ error: "Invalid ipId" }, { status: 400 });
         }
         const result = await publicClient.readContract({
           address: addr,
           abi: AGENT_VAULT_ABI,
-          functionName: "checkAccess",
-          args: [BigInt(agentId), userAddress as `0x${string}`],
+          functionName: "getIpInfo",
+          args: [ipId as `0x${string}`],
         });
-        return NextResponse.json({ success: true, hasAccess: result });
+        return NextResponse.json({ success: true, info: result });
       }
 
-      case "getAgentMemoryCount": {
+      case "getAgent": {
         const { agentId } = params;
         const result = await publicClient.readContract({
           address: addr,
           abi: AGENT_VAULT_ABI,
-          functionName: "getAgentMemoryCount",
+          functionName: "getAgent",
           args: [BigInt(agentId)],
-        }) as bigint;
-        return NextResponse.json({ success: true, count: result.toString() });
+        });
+        return NextResponse.json({ success: true, agent: result });
       }
 
       default:

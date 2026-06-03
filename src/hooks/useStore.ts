@@ -185,6 +185,77 @@ export function useStore() {
     return { blob, filename };
   }, []);
 
+  // Import a JSON payload previously produced by exportJson().
+  // Returns { added: { agents, memories, grantedLicenses }, skipped } — IDs that
+  // already exist locally are skipped (de-dupe by `id`).
+  const importJson = useCallback((raw: unknown): {
+    added: { agents: number; memories: number; grantedLicenses: number };
+    skipped: { agents: number; memories: number; grantedLicenses: number };
+    error?: string;
+  } => {
+    try {
+      if (!raw || typeof raw !== "object") {
+        return { added: { agents: 0, memories: 0, grantedLicenses: 0 }, skipped: { agents: 0, memories: 0, grantedLicenses: 0 }, error: "Invalid JSON: not an object" };
+      }
+      const payload = raw as Partial<{
+        schema: string;
+        agents: Agent[];
+        memories: Memory[];
+        grantedLicenses: GrantedLicense[];
+      }>;
+      if (payload.schema && payload.schema !== "agentvault-export-v1") {
+        return { added: { agents: 0, memories: 0, grantedLicenses: 0 }, skipped: { agents: 0, memories: 0, grantedLicenses: 0 }, error: `Unsupported schema: ${payload.schema}` };
+      }
+      const incomingAgents = Array.isArray(payload.agents) ? payload.agents : [];
+      const incomingMemories = Array.isArray(payload.memories) ? payload.memories : [];
+      const incomingLicenses = Array.isArray(payload.grantedLicenses) ? payload.grantedLicenses : [];
+
+      const data = loadStore();
+      const existingAgentIds = new Set(data.agents.map((a) => a.id));
+      const existingMemoryIds = new Set(data.memories.map((m) => m.id));
+      const existingLicenseIds = new Set(data.grantedLicenses.map((l) => l.id));
+
+      const newAgents = incomingAgents.filter((a) => a && a.id && !existingAgentIds.has(a.id));
+      const newMemories = incomingMemories.filter((m) => m && m.id && !existingMemoryIds.has(m.id));
+      const newLicenses = incomingLicenses.filter((l) => l && l.id && !existingLicenseIds.has(l.id));
+
+      if (newAgents.length === 0 && newMemories.length === 0 && newLicenses.length === 0) {
+        return {
+          added: { agents: 0, memories: 0, grantedLicenses: 0 },
+          skipped: { agents: incomingAgents.length, memories: incomingMemories.length, grantedLicenses: incomingLicenses.length },
+        };
+      }
+
+      const merged: StoreData = {
+        agents: [...data.agents, ...newAgents],
+        memories: [...data.memories, ...newMemories],
+        grantedLicenses: [...data.grantedLicenses, ...newLicenses],
+        marketListings: data.marketListings,
+      };
+      saveStore(merged);
+
+      // Also reflect into React state
+      setAgents(merged.agents);
+      setMemories(merged.memories);
+      setGrantedLicenses(merged.grantedLicenses);
+
+      return {
+        added: { agents: newAgents.length, memories: newMemories.length, grantedLicenses: newLicenses.length },
+        skipped: {
+          agents: incomingAgents.length - newAgents.length,
+          memories: incomingMemories.length - newMemories.length,
+          grantedLicenses: incomingLicenses.length - newLicenses.length,
+        },
+      };
+    } catch (e) {
+      return {
+        added: { agents: 0, memories: 0, grantedLicenses: 0 },
+        skipped: { agents: 0, memories: 0, grantedLicenses: 0 },
+        error: (e as Error)?.message || "Import failed",
+      };
+    }
+  }, []);
+
   // Export memories to CSV. Useful for spreadsheet analysis / archival.
   const exportCsv = useCallback((): { blob: Blob; filename: string } => {
     const data = loadStore();
@@ -253,6 +324,7 @@ export function useStore() {
     removeMarketListing,
     getAgentMemories,
     exportJson,
+    importJson,
     exportCsv,
     triggerDownload,
     totalMemories,

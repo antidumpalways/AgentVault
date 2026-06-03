@@ -64,7 +64,7 @@ export function CtaSection() {
           <div className="relative z-10 px-8 lg:px-20 py-16 lg:py-24 text-center">
             <div className="flex items-center justify-center gap-3 mb-10"><span className="status-pulse w-2 h-2 rounded-full bg-[#22c55e] inline-block" /><span className="font-mono text-[11px] tracking-[0.2em] text-[#22c55e]">AGENTVAULT · READY</span></div>
             <h2 className="font-display text-[clamp(3.5rem,12vw,10rem)] leading-[0.88] tracking-tight text-[#f2ede6] uppercase mb-4">BUILD YOUR FIRST<br /><span className="text-[#00d9ff]">SECURE AGENT</span><br />TODAY.</h2>
-            <p className="font-mono text-sm text-[#5a5a5a] mb-12 max-w-lg mx-auto leading-relaxed">Try AgentVault on Story Aeneid testnet. No signup. Bring your wallet, get testnet IP from the built-in drip, spawn your first agent.</p>
+            <p className="font-mono text-sm text-[#5a5a5a] mb-12 max-w-lg mx-auto leading-relaxed">Try AgentVault on Story Aeneid testnet. No signup. Bring your wallet, grab testnet IP from a public faucet, spawn your first agent.</p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <a href="/app" className="group inline-flex items-center gap-4 bg-[#00d9ff] text-[#0a0e27] font-mono text-sm tracking-widest px-8 py-5 hover:bg-[#00e6ff] transition-colors font-semibold">LAUNCH DASHBOARD<span className="transition-transform group-hover:translate-x-1">→</span></a>
               <a href="/docs" className="group inline-flex items-center gap-4 border border-[#2e2e2e] text-[#5a5a5a] font-mono text-sm tracking-widest px-8 py-5 hover:border-[#00d9ff]/40 hover:text-[#00d9ff] transition-colors">READ API DOCS<span className="transition-transform group-hover:translate-x-1">→</span></a>

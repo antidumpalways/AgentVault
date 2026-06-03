@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAppStore } from "@/hooks/useAppStore";
 import { useWallet } from "@/hooks/useWallet";
-import { recallEncryptedMemory, getUserAgentsOnChain, checkAccessOnChain } from "@/hooks/useCDRClient";
+import { recallEncryptedMemory, getUserAgentsOnChain } from "@/hooks/useCDRClient";
 import { showToast } from "@/components/Toast";
 
 export default function BrainContent() {
@@ -11,7 +11,7 @@ export default function BrainContent() {
   const [foundMemories, setFoundMemories] = useState<{ role: string; content: string; agentName: string; createdAt: string }[]>([]);
   const [isRecalling, setIsRecalling] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
-  const [onChainIds, setOnChainIds] = useState<number[]>([]);
+  const [onChainIds, setOnChainIds] = useState<string[]>([]);
   const [recallSource, setRecallSource] = useState<"blockchain" | "local" | null>(null);
   const { memories, agents, loaded } = useAppStore();
   const { address, isConnected } = useWallet();
@@ -161,11 +161,11 @@ export default function BrainContent() {
           {/* On-Chain Agents */}
           {onChainIds.length > 0 && (
             <div>
-              <label className="block font-mono text-[10px] text-[#3a3a3a] tracking-widest mb-2">ON-CHAIN AGENTS (AGENTVAULT)</label>
+              <label className="block font-mono text-[10px] text-[#3a3a3a] tracking-widest mb-2">ON-CHAIN IP ASSETS (AGENTVAULT REGISTRY)</label>
               <div className="flex flex-wrap gap-2">
-                {onChainIds.map((id) => (
-                  <div key={id} className="font-mono text-[10px] px-3 py-1.5 border border-[#1e1e1e] text-[#5a5a5a]">
-                    Agent #{id}
+                {onChainIds.map((ipId) => (
+                  <div key={ipId} className="font-mono text-[10px] px-3 py-1.5 border border-[#1e1e1e] text-[#5a5a5a]">
+                    IP {ipId.slice(0, 6)}...{ipId.slice(-4)}
                   </div>
                 ))}
               </div>

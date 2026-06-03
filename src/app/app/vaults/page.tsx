@@ -3,7 +3,7 @@
 
 import { useAppStore } from '@/hooks/useAppStore'
 import { useWallet } from '@/hooks/useWallet'
-import { getUserAgentsOnChain, checkAccessOnChain } from '@/hooks/useCDRClient'
+import { getUserAgentsOnChain } from '@/hooks/useCDRClient'
 import { useGrantLicense, getLicensesOwnedBy } from '@/hooks/useGrantLicense'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
@@ -11,11 +11,10 @@ import { isValidAddress } from '@/lib/validate'
 import { showToast } from '@/components/Toast'
 
 export default function VaultsPage() {
-  const { agents, memories, grantedLicenses, marketListings, loaded, totalSizeKB, addGrantedLicense, removeGrantedLicense, addMarketListing, exportJson, exportCsv, triggerDownload } = useAppStore()
+  const { agents, memories, grantedLicenses, marketListings, loaded, totalSizeKB, addGrantedLicense, removeGrantedLicense, addMarketListing, exportJson, importJson, exportCsv, triggerDownload } = useAppStore()
   const { address } = useWallet()
   const { grantLicense, isGranting, error: grantError } = useGrantLicense()
-  const [onChainIds, setOnChainIds] = useState<number[]>([])
-  const [accessMap, setAccessMap] = useState<Record<number, boolean>>({})
+  const [onChainIds, setOnChainIds] = useState<string[]>([])
   const [grantingAgent, setGrantingAgent] = useState<string | null>(null)
   const [granteeInput, setGranteeInput] = useState('')
   const [grantedTx, setGrantedTx] = useState<{ tokenId: string; txHash: string; grantee: string } | null>(null)
@@ -28,14 +27,7 @@ export default function VaultsPage() {
 
   useEffect(() => {
     if (!address) return
-    getUserAgentsOnChain(address).then(async (ids) => {
-      setOnChainIds(ids)
-      const access: Record<number, boolean> = {}
-      for (const id of ids) {
-        access[id] = await checkAccessOnChain(id, address)
-      }
-      setAccessMap(access)
-    }).catch(() => {})
+    getUserAgentsOnChain(address).then(setOnChainIds).catch(() => setOnChainIds([]))
   }, [address])
 
   useEffect(() => {
@@ -108,6 +100,43 @@ export default function VaultsPage() {
             >
               EXPORT JSON
             </button>
+            <div className="w-px bg-[#1e1e1e]" />
+            <label
+              className="font-mono text-[10px] tracking-widest text-[#f2ede6] px-3 py-2 hover:bg-[#1e1e1e] cursor-pointer"
+              title="Restore from a previously exported JSON file"
+            >
+              IMPORT JSON
+              <input
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    const text = await file.text();
+                    const parsed = JSON.parse(text);
+                    const res = importJson(parsed);
+                    if (res.error) {
+                      showToast(`Import failed: ${res.error}`, undefined, "error");
+                    } else if (res.added.agents + res.added.memories + res.added.grantedLicenses === 0) {
+                      showToast("Nothing new to import", undefined, "info");
+                    } else {
+                      showToast(
+                        `Imported ${res.added.agents} agents, ${res.added.memories} memories, ${res.added.grantedLicenses} licenses`,
+                        undefined,
+                        "success"
+                      );
+                    }
+                  } catch (err) {
+                    showToast(`Import failed: ${(err as Error)?.message || "parse error"}`, undefined, "error");
+                  } finally {
+                    // Allow re-importing the same file
+                    e.target.value = "";
+                  }
+                }}
+              />
+            </label>
             <div className="w-px bg-[#1e1e1e]" />
             <button
               type="button"
@@ -496,14 +525,14 @@ export default function VaultsPage() {
         )
       })()}
 
-      {/* On-Chain Agent IDs */}
+      {/* On-Chain IP Asset IDs (from AgentVault registry) */}
       {onChainIds.length > 0 && (
         <div className="border border-[#1e1e1e] bg-[#0e0e0e] p-6">
-          <div className="font-mono text-[10px] text-[#3a3a3a] tracking-widest mb-4">ON-CHAIN AGENTS (AGENTVAULT CONTRACT)</div>
+          <div className="font-mono text-[10px] text-[#3a3a3a] tracking-widest mb-4">ON-CHAIN IP ASSETS (AGENTVAULT REGISTRY)</div>
           <div className="flex flex-wrap gap-2">
-            {onChainIds.map((id) => (
-              <div key={id} className="font-mono text-[10px] px-3 py-1.5 border border-[#1e1e1e] text-[#5a5a5a]">
-                Agent #{id} {accessMap[id] ? <span className="text-[#22c55e]">● ACCESS</span> : <span className="text-[#f87171]">● NO ACCESS</span>}
+            {onChainIds.map((ipId) => (
+              <div key={ipId} className="font-mono text-[10px] px-3 py-1.5 border border-[#1e1e1e] text-[#5a5a5a]">
+                IP {ipId.slice(0, 6)}...{ipId.slice(-4)}
               </div>
             ))}
           </div>

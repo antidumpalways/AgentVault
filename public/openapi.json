@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "AgentVault API",
-    "version": "0.1.0",
-    "description": "HTTP API for AgentVault — encrypted AI agent memory on Story Protocol. All POST endpoints require CSRF-safe Origin/Referer headers (allow-list: localhost:3000, NEXT_PUBLIC_SITE_URL, VERCEL_URL). All endpoints that hit the chain are rate-limited per IP.\n\n## Architecture\n\nAgentVault exposes endpoints for:\n- **CDR** — Confidential Data Rails threshold encryption (store / recall memory on-chain)\n- **Story** — IP Asset + License Token registration\n- **LLM** — Anthropic Sonnet inference proxy\n- **Contract** — On-chain reads of the AgentVault.sol registry\n- **Wallet** — IP balance check + server-side IP drip for testnet onboarding\n- **License** — Enumerate license tokens held by a wallet\n\n## Cross-cutting headers\n\n| Header | Required | Notes |\n|--------|----------|-------|\n| `Content-Type` | yes (POST) | `application/json` |\n| `Origin` | yes (POST) | Must match CSRF allow-list |\n\n## Error format\n\nAll errors return `{ \"error\": \"<message>\" }` with an appropriate 4xx/5xx status. Rate-limited responses include `resetMs` (ms until limit resets) or `retryInMs` / `retryInMin` for wallet cooldowns.",
+    "version": "0.2.0",
+    "description": "HTTP API for AgentVault — encrypted AI agent memory on Story Protocol. All POST endpoints require CSRF-safe Origin/Referer headers (allow-list: localhost:3000, NEXT_PUBLIC_SITE_URL, VERCEL_URL). All endpoints that hit the chain are rate-limited per IP.\n\n## Architecture\n\nAgentVault exposes endpoints for:\n- **CDR** — Confidential Data Rails threshold encryption (store / recall memory on-chain)\n- **Story** — IP Asset + License Token registration (user-pays: returns calldata templates)\n- **LLM** — Anthropic Sonnet inference proxy\n- **Contract** — On-chain reads of the AgentVault.sol registry (getUserIpIds, getUserAgents, getIpInfo, getAgent)\n- **Wallet** — IP balance check only (no in-app drip; users fund via external faucet)\n- **License** — Enumerate license tokens held by a wallet\n- **Marketplace** — Pre-encode license minting calldata for buyers to sign\n\n## Cross-cutting headers\n\n| Header | Required | Notes |\n|--------|----------|-------|\n| `Content-Type` | yes (POST) | `application/json` |\n| `Origin` | yes (POST) | Must match CSRF allow-list |\n\n## Error format\n\nAll errors return `{ \"error\": \"<message>\" }` with an appropriate 4xx/5xx status. Rate-limited responses include `resetMs` (ms until limit resets) or `retryInMs` / `retryInMin` for wallet cooldowns.",
     "contact": {
       "name": "AgentVault",
       "url": "https://github.com/antidumpalways/AgentVault"
@@ -105,7 +105,7 @@
       "post": {
         "tags": ["Story"],
         "summary": "Mint NFT, register IP Asset, attach license terms, mint license token, create AgentVault agent, store memory reference",
-        "description": "Runs the full 6-step Story Protocol + AgentVault onboarding for one agent. The NFT is minted to the user's wallet (user owns the IP Asset). Steps 1-2 + 5-6 (when caller is the deployer) are server-signed; steps 3-4 always require client signing because they go through the user's IP Account. For non-deployer users, steps 5-6 (createAgent + storeMemory on the AgentVault contract) are also client-signed — the user becomes the true on-chain owner of the AgentVault agent. All server-signed transactions are serialized with a nonce lock to prevent conflicts. Returns the resulting `ipId`, `licenseTokenId`, `agentId` (when server-signed), `readConditionData` blob, and tx hashes for each step.",
+        "description": "USER-PAYS spawn flow. Returns pre-encoded calldata templates (ABIs + arg templates) for the 5 user-signed txs: mint NFT, register IP, attachLicense (via IPAccount.execute), mintLicense (via IPAccount.execute), and createAgentAndStoreMemory on the AgentVault contract. The user fills in tokenId/ipId placeholders after each receipt and signs sequentially. The server does NOT sign ownership txs (no more 'deployer drained' issue). After all 5 txs are mined, the client calls /api/story/finalize to register the IP in the AgentVault on-chain registry (1 server-signed tx). Schema below is approximate — the actual response contains viem-compatible `abi` + `args` templates for each step. For exact field names, see src/app/api/story/setup/route.ts.",
         "operationId": "storySetup",
         "requestBody": {
           "required": true,
@@ -230,45 +230,6 @@
           "400": { "$ref": "#/components/responses/BadRequest" },
           "403": { "$ref": "#/components/responses/CSRF" },
           "500": { "$ref": "#/components/responses/ServerError" }
-        }
-      }
-    },
-    "/api/wallet/drip": {
-      "post": {
-        "tags": ["Wallet"],
-        "summary": "Drip testnet IP from the server wallet (for demo onboarding)",
-        "description": "Sends 0.1 IP from the deployer wallet to the requested address. Cooldown: 1 drip per wallet per hour. Rate limit: 10 drips per IP per hour. Returns 503 if the deployer wallet is low on IP. This endpoint exists so demo users can interact with the chain without external faucets.",
-        "operationId": "walletDrip",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": { "$ref": "#/components/schemas/WalletAddressRequest" }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Drip sent",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/WalletDripResponse" }
-              }
-            }
-          },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/CSRF" },
-          "429": { "$ref": "#/components/responses/RateLimited" },
-          "500": { "$ref": "#/components/responses/ServerError" },
-          "503": {
-            "description": "Server wallet is low on IP",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
-                "example": { "error": "Server wallet is low on IP. Ask the operator to refill." }
-              }
-            }
-          }
         }
       }
     },
