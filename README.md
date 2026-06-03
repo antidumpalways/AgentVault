@@ -395,6 +395,23 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+### Build (Production)
+
+```bash
+npm run build
+npm run start
+```
+
+`build` runs `next build` and produces an optimized production bundle in `.next/`. `start` serves that bundle on port 3000 by default — override with `PORT=4000 npm run start`. For container deploys, the resulting Node server is self-contained and can run behind any reverse proxy.
+
+### Lint
+
+```bash
+npm run lint
+```
+
+Runs `next lint` (ESLint with `next/core-web-vitals` config from `.eslintrc.json`).
+
 ---
 
 ## Architecture Vision
